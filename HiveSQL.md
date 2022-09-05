@@ -653,10 +653,6 @@ select * from emp distribute by deptno sort by deptno;
 
 
 
-
-
-
-
 # 函数
 
 
@@ -967,3 +963,378 @@ from score;
 ## 自定义函数
 
 UDF、UDAF、UDTF
+
+
+
+# 分区表和分桶表
+
+## 分区表
+
+分区表实际上就是对应一个 HDFS 文件系统上的独立的文件夹，该文件夹下是该分区所 有的数据文件。Hive 中的分区就是分目录，把一个大的数据集根据业务需要分割成小的数据集。在查询时通过 WHERE 子句中的表达式选择查询所需要的指定的分区，这样的查询效率 会提高很多。
+
+### 分区表基本操作
+
+数据准备：需要根据日期对日志进行管理
+
+```
+dept_20200401.log
+10	ACCOUNTING	1700
+20	RESEARCH	1800
+
+dept_20200402.log
+30	SALES	1900
+40	OPERATIONS	1700
+
+dept_20200403.log
+50	TEST	2000
+60	DEV	1900
+```
+
+#### 创建分区表
+
+```hive
+create table dept_partition(
+deptno int, dname string, loc string
+)
+partitioned by (day string)
+row format delimited fields terminated by '\t';
+```
+
+导入数据
+
+```hive
+load data local inpath '/home/zhuweihao/opt/data/dept_20200401.log' into table dept_partition partition(day='20200401');
+load data local inpath '/home/zhuweihao/opt/data/dept_20200402.log' into table dept_partition partition(day='20200402');
+load data local inpath '/home/zhuweihao/opt/data/dept_20200403.log' into table dept_partition partition(day='20200403');
+```
+
+#### 单分区查询
+
+```hive
+select * from dept_partition where day='20200401';
+```
+
+![image-20220905184054762](HiveSQL.assets/image-20220905184054762.png)
+
+#### 多分区联合查询
+
+```hive
+select * from dept_partition where day='20200401'
+union
+select * from dept_partition where day='20200402';
+```
+
+![image-20220905192545029](HiveSQL.assets/image-20220905192545029.png)
+
+```hive
+select * from dept_partition where day='20200401' or day='20200402' or day='20200403';
+```
+
+![image-20220905192927235](HiveSQL.assets/image-20220905192927235.png)
+
+#### 增加分区
+
+创建单个分区
+
+```hive
+alter table dept_partition add partition(day='20200404');
+```
+
+![image-20220905193207058](HiveSQL.assets/image-20220905193207058.png)
+
+同时创建多个分区
+
+```hive
+alter table dept_partition add partition(day='20200405') partition(day='20200406');
+```
+
+![image-20220905193358534](HiveSQL.assets/image-20220905193358534.png)
+
+#### 删除分区
+
+删除单个分区
+
+```hive
+alter table dept_partition drop partition (day='20200406');
+```
+
+ 同时删除多个分区
+
+```hive
+alter table dept_partition drop partition (day='20200404'), partition(day='20200405');
+```
+
+![image-20220905194025012](HiveSQL.assets/image-20220905194025012.png)
+
+#### 查看分区表有多少分区
+
+```hive
+show partitions dept_partition;
+```
+
+![image-20220905194447624](HiveSQL.assets/image-20220905194447624.png)
+
+#### 查看分区表结构
+
+```hive
+desc formatted dept_partition;
+```
+
+<img src="HiveSQL.assets/image-20220905194658308.png" alt="image-20220905194658308" style="zoom: 67%;" />
+
+### 二级分区
+
+思考: 如果一天的日志数据量也很大，如何再将数据拆分?
+
+#### 创建二级分区表 
+
+```hive
+create table dept_partition2(deptno int, dname string, loc string)
+partitioned by (day string, hour string)
+row format delimited fields terminated by '\t';
+```
+
+#### 正常的加载数据 
+
+加载数据到二级分区表中 
+
+```hive
+load data local inpath '/home/zhuweihao/opt/data/dept_20200401.log' into table dept_partition2 partition(day='20200401', hour='12');
+```
+
+ 查询分区数据 
+
+```hive
+select * from dept_partition2 where day='20200401' and hour='12';
+```
+
+![image-20220905195405199](HiveSQL.assets/image-20220905195405199.png)
+
+#### 把数据直接上传到分区目录上，让分区表和数据产生关联的三种方式
+
+- 方式一：上传数据后修复
+
+上传数据 
+
+```
+dfs -mkdir -p /user/hive/warehouse/dept_partition2/day=20200401/hour=13;
+dfs -put /home/zhuweihao/opt/data/dept_20200401.log /user/hive/warehouse/dept_partition2/day=20200401/hour=13; 
+```
+
+查询数据（查询不到刚上传的数据）
+
+```hive
+select * from dept_partition2 where day='20200401' and hour='13'; 
+```
+
+执行修复命令
+
+```
+msck repair table dept_partition2; 
+```
+
+再次查询数据
+
+```hive
+select * from dept_partition2 where day='20200401' and hour='13'; 
+```
+
+![image-20220905201149670](HiveSQL.assets/image-20220905201149670.png)
+
+- 方式二：上传数据后添加分区 
+
+上传数据 
+
+```
+dfs -mkdir -p /user/hive/warehouse/dept_partition2/day=20200401/hour=14; 
+dfs -put /home/zhuweihao/opt/data/dept_20200401.log /user/hive/warehouse/dept_partition2/day=20200401/hour=14; 
+```
+
+执行添加分区 
+
+```hive
+alter table dept_partition2 add partition(day='20200401',hour='14');
+```
+
+ 查询数据 
+
+```hive
+select * from dept_partition2 where day='20200401' and hour='14';
+```
+
+![image-20220905203005739](HiveSQL.assets/image-20220905203005739.png)
+
+---
+
+删除命令
+
+```
+dfs -rm -r /user/hive/warehouse/dept_partition2/day=20200401/hour=14;
+```
+
+----
+
+- 方式三：创建文件夹后 load 数据到分区 
+
+创建目录 
+
+```
+dfs -mkdir -p /user/hive/warehouse/dept_partition2/day=20200401/hour=15; 
+```
+
+ 上传数据 
+
+```hive
+load data local inpath '/home/zhuweihao/opt/data/dept_20200401.log' into table dept_partition2 partition(day='20200401',hour='15');
+```
+
+ 查询数据 
+
+```hive
+select * from dept_partition2 where day='20200401' and hour='15';
+```
+
+![image-20220905203257167](HiveSQL.assets/image-20220905203257167.png)
+
+### 动态分区调整
+
+关系型数据库中，对分区表 Insert 数据时候，数据库自动会根据分区字段的值，将数据插入到相应的分区中，Hive 中也提供了类似的机制，即动态分区(Dynamic Partition)，只不过， 使用 Hive 的动态分区，需要进行相应的配置。
+
+#### 开启动态分区参数设置
+
+1. 开启动态分区功能（默认 true，开启）
+
+   ```
+   hive.exec.dynamic.partition=true
+   ```
+
+2. 设置为非严格模式（动态分区的模式，默认 strict，表示必须指定至少一个分区为静态分区，nonstrict 模式表示允许所有的分区字段都可以使用动态分区。） 
+
+   ```
+   hive.exec.dynamic.partition.mode=nonstrict
+   ```
+
+3. 在所有执行 MR 的节点上，最大一共可以创建多少个动态分区。默认 1000 
+
+   ```
+   hive.exec.max.dynamic.partitions=1000
+   ```
+
+4. 在每个执行 MR 的节点上，最大可以创建多少个动态分区。该参数需要根据实际的数据来设定。比如：源数据中包含了一年的数据，即 day 字段有 365 个值，那么该参数就需要设置成大于 365，如果使用默认值100，则会报错。 
+
+   ```
+   hive.exec.max.dynamic.partitions.pernode=100
+   ```
+
+5. 整个 MR Job 中，最大可以创建多少个 HDFS 文件。默认 100000 
+
+   ```
+   hive.exec.max.created.files=100000
+   ```
+
+6. 当有空分区生成时，是否抛出异常。一般不需要设置。默认 false 
+
+   ```
+   hive.error.on.empty.partition=false
+   ```
+
+#### 实例
+
+将 dept 表中的数据按照地区（loc 字段），插入到目标表 dept_partition 的相应分区中。
+
+创建目标分区表 
+
+```hive
+create table dept_partition_dy(id int, name string)  
+partitioned by (loc int) 
+row format delimited fields terminated by '\t'; 
+```
+
+设置动态分区 
+
+```hive
+set hive.exec.dynamic.partition.mode = nonstrict; 
+```
+
+插入数据
+
+```hive
+insert into table dept_partition_dy partition(loc) select deptno, dname,loc from dept; 
+```
+
+查看目标分区表的分区情况 
+
+```hive
+show partitions dept_partition;
+```
+
+![image-20220905204734284](HiveSQL.assets/image-20220905204734284.png)
+
+## 分桶表
+
+分区提供一个隔离数据和优化查询的便利方式。不过，并非所有的数据集都可形成合理的分区。对于一张表或者分区，Hive 可以进一步组织成桶，也就是更为细粒度的数据范围划分。 
+
+分桶是将数据集分解成更容易管理的若干部分的另一个技术。 
+
+分区针对的是数据的存储路径；分桶针对的是数据文件。
+
+### 创建分桶表
+
+数据准备
+
+```
+1001	ss1
+1002	ss2
+1003	ss3
+1004	ss4
+1005	ss5
+1006	ss6
+1007	ss7
+1008	ss8
+1009	ss9
+1010	ss10
+1011	ss11
+1012	ss12
+1013	ss13
+1014	ss14
+1015	ss15
+1016	ss16
+```
+
+创建分桶表
+
+```hive
+create table stu_buck(id int, name string)
+clustered by(id) 
+into 4 buckets
+row format delimited fields terminated by '\t';
+```
+
+查看表结构
+
+```hive
+desc formatted stu_buck;
+```
+
+导入数据到分桶表中，load 的方式
+
+```hive
+load data inpath '/home/zhuweihao/opt/data/test1.txt' into table stu_buck;
+```
+
+查询数据
+
+```hive
+select * from stu_buck;
+```
+
+![image-20220905205947883](HiveSQL.assets/image-20220905205947883.png)
+
+----
+
+分桶规则：
+
+根据结果可知：Hive 的分桶采用对分桶字段的值进行哈希，然后除以桶的个数求余的方 式决定该条记录存放在哪个桶当中
+
+----
+
