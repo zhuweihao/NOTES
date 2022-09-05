@@ -105,6 +105,17 @@ select '1'+2, cast('1'as int) + 2;
 
 # DDL数据定义
 
+文档：[LanguageManual DDL - Apache Hive - Apache Software Foundation](https://cwiki.apache.org/confluence/display/Hive/LanguageManual+DDL)
+
+## 创建数据库
+
+```hive
+CREATE DATABASE [IF NOT EXISTS] database_name 
+[COMMENT database_comment] 
+[LOCATION hdfs_path] 
+[WITH DBPROPERTIES (property_name=property_value, ...)]; 
+```
+
 
 
 ## 创建表
@@ -155,3 +166,804 @@ CREATE [EXTERNAL] TABLE [IF NOT EXISTS] table_name
 ### 分区表
 
 分区表实际上就是对应一个 HDFS 文件系统上的独立的文件夹，该文件夹下是该分区 所有的数据文件。Hive 中的分区就是分目录，把一个大的数据集根据业务需要分割成小的 数据集。在查询时通过 WHERE 子句中的表达式选择查询所需要的指定的分区，这样的查询效率会提高很多。
+
+
+
+# DML数据操作
+
+文档：[LanguageManual DML - Apache Hive - Apache Software Foundation](https://cwiki.apache.org/confluence/display/Hive/LanguageManual+DML)
+
+## 数据导入
+
+### 向表中装载数据（Load）
+
+```hive
+load data [local] inpath '/opt/module/datas/student.txt' [overwrite] into table student 
+[partition (partcol1=val1,…)]; 
+```
+
+- load data:表示加载数据 
+- local:表示从本地加载数据到 hive 表；否则从 HDFS 加载数据到 hive 表 
+- inpath:表示加载数据的路径 
+- overwrite:表示覆盖表中已有数据，否则表示追加 
+- into table:表示加载到哪张表 
+- student:表示具体的表 
+- partition:表示上传到指定分区 
+
+实例：
+
+```hive
+create table student(id string, name string) row format delimited fields terminated by '\t'; 
+```
+
+```hive
+load data local inpath '/home/zhuweihao/opt/data/student.txt' into table default.student; 
+```
+
+
+
+### 通过查询语句向表中插入数据（Insert）
+
+创建分区表
+
+```hive
+create table student_par(id int, name string) partitioned by (month string) row format delimited fields terminated by '\t'; 
+```
+
+插入基本数据
+
+```hive
+insert into table  student_par partition(month='201709') values(1,'wangwu'),(2,'zhaoliu'); 
+```
+
+基本模式插入（根据单张表查询结果）
+
+```hive
+insert overwrite table student partition(month='201708') 
+select id, name from student where month='201709'; 
+```
+
+insert into：以追加数据的方式插入到表或分区，原有数据不会删除 
+
+insert overwrite：会覆盖表或分区中已存在的数据 
+
+多表（多分区）插入模式（根据多张表查询结果）
+
+```hive
+from student               
+insert overwrite table student partition(month='201707')               
+select id, name where month='201709'               
+insert overwrite table student partition(month='201706')               
+select id, name where month='201709'; 
+```
+
+----
+
+问题：
+
+![image-20220904214627430](HiveSQL.assets/image-20220904214627430.png)
+
+----
+
+### 查询语句中创建表并加载数据（as select）
+
+根据查询结果创建表（查询的结果会添加到新创建的表中）
+
+```hive
+create table if not exists student3 
+as select id, name from student;
+```
+
+### 创建表时通过Location指定加载数据路径
+
+上传数据到hdfs上
+
+```hive
+dfs -mkdir /student;
+dfs -put /home/zhuweihao/opt/data/student.txt /student;
+```
+
+创建表，并指定数据在hdfs上的位置
+
+```hive
+create external table if not exists student5(id int, name string) 
+row format delimited fields terminated by '\t' 
+location '/student';
+```
+
+## 数据导出
+
+### Insert导出
+
+将查询的结果格式化导出到本地
+
+```hive
+>insert overwrite local directory '/home/zhuweihao/opt/data/student'
+ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t'
+select * from student;
+```
+
+将查询的结果导出到HDFS上（没有local）
+
+```hive
+insert overwrite directory '/student'
+ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t'
+select * from student; 
+```
+
+### Hadoop命令导出到本地
+
+```hive
+dfs -get /user/hive/warehouse/student/month=202209/000000_0 /home/zhuweihao/opt/data/student/student3.txt;
+```
+
+
+
+## 清空表
+
+```hive
+truncate table student；
+```
+
+注意：truncate只能删除管理表中数据，不能删除外部表中数据
+
+
+
+# 查询
+
+文档：[LanguageManual Select - Apache Hive - Apache Software Foundation](https://cwiki.apache.org/confluence/display/Hive/LanguageManual+Select)
+
+
+
+语法
+
+```hive
+[WITH CommonTableExpression (, CommonTableExpression)*]    (Note: Only available starting with Hive 0.13.0)
+SELECT [ALL | DISTINCT] select_expr, select_expr, ...
+  FROM table_reference
+  [WHERE where_condition]
+  [GROUP BY col_list]
+  [ORDER BY col_list]
+  [CLUSTER BY col_list
+    | [DISTRIBUTE BY col_list] [SORT BY col_list]
+  ]
+ [LIMIT [offset,] rows]
+```
+
+数据准备：
+
+dept：
+
+```
+10	ACCOUNTING	1700
+20	RESEARCH	1800
+30	SALES	1900
+40	OPERATIONS	1700
+```
+
+emp：
+
+```
+7369	SMITH	CLERK	7902	1980-12-17	800.00		20
+7499	ALLEN	SALESMAN	7698	1981-2-20	1600.00	300.00	30
+7521	WARD	SALESMAN	7698	1981-2-22	1250.00	500.00	30
+7566	JONES	MANAGER	7839	1981-4-2	2975.00		20
+7654	MARTIN	SALESMAN	7698	1981-9-28	1250.00	1400.00	30
+7698	BLAKE	MANAGER	7839	1981-5-1	2850.00		30
+7782	CLARK	MANAGER	7839	1981-6-9	2450.00		10
+7788	SCOTT	ANALYST	7566	1987-4-19	3000.00		20
+7839	KING	PRESIDENT		1981-11-17	5000.00		10
+7844	TURNER	SALESMAN	7698	1981-9-8	1500.00	0.00	30
+7876	ADAMS	CLERK	7788	1987-5-23	1100.00		20
+7900	JAMES	CLERK	7698	1981-12-3	950.00		30
+7902	FORD	ANALYST	7566	1981-12-3	3000.00		20
+7934	MILLER	CLERK	7782	1982-1-23	1300.00		10
+```
+
+创建部门表：
+
+```hive
+create table if not exists dept(deptno int, dname string, loc int) 
+row format delimited fields terminated by '\t'; 
+```
+
+创建员工表：
+
+```hive
+create table if not exists emp(empno int, ename string,job string, mgr int, hiredate string,sal double,comm double,deptno int) 
+row format delimited fields terminated by '\t'; 
+```
+
+导入数据：
+
+```hive
+load data local inpath '/home/zhuweihao/opt/data/dept.txt' into table dept; 
+load data local inpath '/home/zhuweihao/opt/data/emp.txt' into table emp; 
+```
+
+![image-20220904235548359](HiveSQL.assets/image-20220904235548359.png)
+
+![image-20220904235530102](HiveSQL.assets/image-20220904235530102.png)
+
+## 基本查询
+
+### 全表和特定列查询
+
+全表查询
+
+```hive
+select * from emp;
+select empno,ename,job,mgr,hiredate,sal,comm,deptno from emp ;
+```
+
+特定列查询
+
+```hive
+select empno, ename from emp;
+```
+
+注意：
+
+- SQL 语言大小写不敏感。  
+- SQL 可以写在一行或者多行 
+- 关键字不能被缩写也不能分行 
+- 各子句一般要分行写。 
+- 使用缩进提高语句的可读性
+
+### 列别名
+
+```hive
+select ename as name, deptno dn from emp; 
+```
+
+![image-20220904235744406](HiveSQL.assets/image-20220904235744406.png)
+
+### 算数运算符
+
+![image-20220904235826307](HiveSQL.assets/image-20220904235826307.png)
+
+```hive
+select sal +1 from emp; 
+```
+
+### where语句
+
+- 使用 WHERE 子句，将不满足条件的行过滤掉 
+- WHERE 子句紧随 FROM 子句 
+
+```hive
+select * from emp where sal>1000; 
+```
+
+----
+
+注意：where 子句中不能使用字段别名。 
+
+执行顺序：from-where-select
+
+---
+
+### 比较运算符（Between/In/is null）
+
+![image-20220905000503250](HiveSQL.assets/image-20220905000503250.png)
+
+![image-20220905000514683](HiveSQL.assets/image-20220905000514683.png)
+
+```hive
+select * from emp where sal IN (1500, 5000); 
+select * from emp where sal between 500 and 1000; 
+```
+
+### 常用函数
+
+```hive
+求总行数（count） 
+select count(*) cnt from emp; 
+求工资的最大值（max）
+select max(sal) max_sal from emp; 
+求工资的最小值（min）
+select min(sal) min_sal from emp; 
+求工资的总和（sum） 
+select sum(sal) sum_sal from emp;  
+求工资的平均值（avg） 
+select avg(sal) avg_sal from emp; 
+```
+
+
+
+### like和rlike
+
+- 使用 LIKE 运算选择类似的值 
+- 选择条件可以包含字符或数字: 
+  - % 代表零个或多个字符(任意个字符)。 
+  - _ 代表一个字符。 
+- RLIKE 子句：RLIKE 子句是 Hive 中这个功能的一个扩展，其可以通过 Java 的正则表达式这个更强大的语言来指定匹配条件。 
+
+```hive
+select * from emp where ename LIKE '_A%'; 
+select * from emp where ename RLIKE '[A]'; 
+```
+
+### 逻辑运算符
+
+![image-20220905000920609](HiveSQL.assets/image-20220905000920609.png)
+
+## 分组
+
+### group by语句
+
+GROUP BY 语句通常会和聚合函数一起使用，按照一个或者多个列队结果进行分组，然后对每个组执行聚合操作。 
+
+```hive
+计算emp表每个部门的平均工资
+select t.deptno, avg(t.sal) avg_sal from emp t group by t.deptno; 
+计算emp表每个部门中每个岗位的最高薪水
+select t.deptno, t.job, max(t.sal) max_sal from emp t group by t.deptno, t.job;
+```
+
+![image-20220905001313993](HiveSQL.assets/image-20220905001313993.png)
+
+### having语句
+
+having语句和where的不同点：
+
+- where 后面不能写分组函数，而 having 后面可以使用分组函数。 
+- having 只用于 group by 分组统计语句。 
+
+```hive
+求所有平均薪水大于2000的部门 
+select deptno, avg(sal) avg_sal from emp group by deptno having avg_sal > 2000;
+```
+
+![image-20220905001632434](HiveSQL.assets/image-20220905001632434.png)
+
+## Join语句
+
+### 等值Join
+
+Hive 支持通常的 SQL JOIN 语句。
+
+根据员工表和部门表中的部门编号相等，查询员工编号、员工名称和部门名称； 
+
+```hive
+select e.empno, e.ename, d.deptno, d.dname from emp e join dept d on e.deptno = d.deptno; 
+```
+
+### 内连接
+
+内连接：只有进行连接的两个表中都存在与连接条件相匹配的数据才会被保留下来。 
+
+```hive
+select e.empno, e.ename, d.deptno from emp e join dept d on e.deptno = d.deptno; 
+```
+
+### 左外连接
+
+左外连接：JOIN 操作符左边表中符合 WHERE 子句的所有记录将会被返回。 
+
+```hive
+select e.empno, e.ename, d.deptno from emp e left join dept d on e.deptno = d.deptno; 
+```
+
+### 右外连接
+
+右外连接：JOIN 操作符右边表中符合 WHERE 子句的所有记录将会被返回。
+
+```hive
+select e.empno, e.ename, d.deptno from emp e right join dept d on e.deptno = d.deptno; 
+```
+
+### 满外连接
+
+满外连接：将会返回所有表中符合 WHERE 语句条件的所有记录。如果任一表的指定字
+段没有符合条件的值的话，那么就使用 NULL 值替代。 
+
+```hive
+select e.empno, e.ename, d.deptno from emp e full join dept d on e.deptno = d.deptno; 
+```
+
+## 排序
+
+### 全局排序
+
+Order By：全局排序，只有一个 Reducer 
+
+- 使用 ORDER BY 子句排序 
+  - ASC（ascend）: 升序（默认） 
+  - DESC（descend）: 降序 
+- ORDER BY 子句在 SELECT 语句的结尾 
+
+```hive
+查询员工信息按工资升序排列 
+select * from emp order by sal; 
+查询员工信息按工资降序排列 
+select * from emp order by sal desc; 
+```
+
+### 按照别名排序 
+
+按照员工薪水的 2 倍排序 
+
+```hive
+select ename, sal*2 twosal from emp order by twosal; 
+```
+
+### 多个列排序 
+
+按照部门和工资升序排序 
+
+```hive
+select ename, deptno, sal from emp order by deptno, sal; 
+```
+
+![image-20220905002747076](HiveSQL.assets/image-20220905002747076.png)
+
+### 每个Reduce内部排序（Sort By） 
+
+Sort By：对于大规模的数据集 order by 的效率非常低。在很多情况下，并不需要全局排序，此时可以使用 sort by。 
+Sort by 为每个 reducer 产生一个排序文件。每个 Reducer 内部进行排序，对全局结果集来说不是排序。 
+
+```hive
+hive (default)> set mapreduce.job.reduces=3; 
+hive (default)> set mapreduce.job.reduces;
+mapreduce.job.reduces=3
+hive (default)> select * from emp sort by deptno desc; 
+```
+
+![image-20220905003002671](HiveSQL.assets/image-20220905003002671.png)
+
+### 分区（Distribute By）
+
+Distribute By： 在有些情况下，我们需要控制某个特定行应该到哪个 reducer，通常是为了进行后续的聚集操作。distribute by 子句可以做这件事。distribute by 类似 MR 中 partition（自定义分区），进行分区，结合 sort by 使用。  
+对于 distribute by 进行测试，一定要分配多 reduce 进行处理，否则无法看到 distribute by 的效果。
+
+先按照部门编号分区，再按照员工编号降序排序。 
+
+```hive
+hive (default)> set mapreduce.job.reduces=3; 
+hive (default)> select * from emp distribute by deptno sort by empno desc; 
+```
+
+![image-20220905003400205](HiveSQL.assets/image-20220905003400205.png)
+
+
+
+---
+
+注意：
+
+- distribute by 的分区规则是根据分区字段的 hash 码与 reduce 的个数进行模除后，余数相同的分到一个区。 
+- Hive 要求 DISTRIBUTE BY 语句要写在 SORT BY 语句之前。 
+
+---
+
+### Cluster By 
+
+当 distribute by 和 sorts by 字段相同时，可以使用 cluster by 方式。 
+cluster by 除了具有 distribute by 的功能外还兼具 sort by 的功能。但是排序只能是升序排序，不能指定排序规则为 ASC 或者 DESC。 
+
+```hive
+以下两种写法等价 
+select * from emp cluster by deptno; 
+select * from emp distribute by deptno sort by deptno; 
+```
+
+注意：按照部门编号分区，不一定就是固定死的数值，可以是 20 号和 30 号部门分到一
+个分区里面去
+
+
+
+
+
+
+
+# 函数
+
+
+
+## 系统内置函数
+
+```hive
+查看系统自带的函数
+show functions; 
+显示自带的函数的用法
+desc function upper; 
+详细显示自带的函数的用法
+desc function extended upper; 
+```
+
+## 常用内置函数
+
+### 空字段赋值
+
+函数说明：
+
+NVL：给值为 NULL 的数据赋值，它的格式是 NVL( value，default_value)。它的功能是如果 value 为 NULL，则 NVL 函数返回 default_value 的值，否则返回 value 的值，如果两个参数都为 NULL ，则返回 NULL。
+
+如果员工的 comm 为 NULL，则用-1 代替 
+
+```hive
+select comm,nvl(comm, -1) from emp; 
+```
+
+![image-20220905004025346](HiveSQL.assets/image-20220905004025346.png)
+
+如果员工的 comm 为 NULL，则用领导 id 代替 
+
+```hive
+select comm, nvl(comm,mgr) from emp;
+```
+
+### case when then else end
+
+数据准备
+
+```
+wu	A	male
+da	A	male
+song	B	male
+feng	A	female
+ting	B	female
+zhang	B	female
+```
+
+创建表并导入数据
+
+```hive
+create table emp_sex(name string,  dept_id string, sex string) 
+row format delimited fields terminated by "\t";
+```
+
+```hive
+load data local inpath '/home/zhuweihao/opt/data/emp_sex.txt' into table emp_sex;
+```
+
+求出不同部门男女各多少人。
+
+```hive
+select 
+ dept_id,   
+ sum(case sex when 'male' then 1 else 0 end) male_count,   
+ sum(case sex when 'female' then 1 else 0 end) female_count 
+from emp_sex 
+group by dept_id;
+```
+
+![image-20220905005137809](HiveSQL.assets/image-20220905005137809.png)
+
+### 行转列
+
+CONCAT(string A/col, string B/col…)：返回输入字符串连接后的结果，支持任意个输入字符串; 
+
+CONCAT_WS(separator, str1, str2,...)：它是一个特殊形式的 CONCAT()。第一个参数剩余参数间的分隔符。分隔符可以是与剩余参数一样的字符串。如果分隔符是 NULL，返回值也将为 NULL。这个函数会跳过分隔符参数后的任何 NULL 和空字符串。分隔符将被加到被连接的字符串之间; 
+
+注意: CONCAT_WS must be "string or array<string> 
+
+COLLECT_SET(col)：函数只接受基本数据类型，它的主要作用是将某字段的值进行去重汇总，产生 Array 类型字段。 
+
+数据准备：
+
+```
+sun	baiyang	A
+hai	sheshou	A
+song	baiyang	B
+zhu	baiyang	A
+feng	sheshou	A
+cang	baiyang	B
+```
+
+建表并导入数据
+
+```hive
+create table person_info( name string,  constellation string,  blood_type string)  
+row format delimited fields terminated by "\t"; 
+
+load data local inpath "/home/zhuweihao/opt/data/person_info.txt" into table person_info;
+```
+
+把星座和血型一样的人归类到一起
+
+```hive
+SELECT 
+	t1.c_b, CONCAT_WS("|",collect_set(t1.name)) 
+FROM ( 
+    SELECT 
+    	NAME, CONCAT_WS(',',constellation,blood_type) c_b 
+    FROM person_info )t1 
+GROUP BY t1.c_b 
+```
+
+![image-20220905010929234](HiveSQL.assets/image-20220905010929234.png)
+
+### 列转行
+
+EXPLODE(col)：将 hive 一列中复杂的 Array 或者 Map 结构拆分成多行。 
+LATERAL VIEW 
+用法：LATERAL VIEW udtf(expression) tableAlias AS columnAlias 
+解释：用于和 split, explode 等 UDTF 一起使用，它能够将一列数据拆成多行数据，在此基础上可以对拆分后的数据进行聚合。 
+
+数据准备
+
+```
+Person of Interest	suspense,action,science fiction,drama 
+Lie to Me	suspense,police,action,psychology,drama
+Wolf Warrior 2	War,action,disaster
+```
+
+
+
+```hive
+create table movie_info(movie string,category string) 
+row format delimited fields terminated by "\t"; 
+
+load data local inpath "/home/zhuweihao/opt/data/movie_info.txt" into table movie_info;
+```
+
+将电影分类中的数组数据展开
+
+```hive
+SELECT 
+	movie, category_name 
+FROM 
+	movie_info 
+lateral VIEW explode(split(category,",")) movie_info_tmp AS category_name; 
+```
+
+![image-20220905083834264](HiveSQL.assets/image-20220905083834264.png)
+
+### 窗口函数（开窗函数）
+
+#### 相关函数说明
+
+- OVER()：指定分析函数工作的数据窗口大小，这个数据窗口大小可能会随着行的变而变化。
+- CURRENT ROW：当前行 
+- n PRECEDING：往前 n 行数据 
+- n FOLLOWING：往后 n 行数据 
+- UNBOUNDED：起点， 
+  - UNBOUNDED PRECEDING 表示从前面的起点， 
+  - UNBOUNDED FOLLOWING 表示到后面的终点 
+- LAG(col,n,default_val)：往前第 n 行数据 
+- LEAD(col,n, default_val)：往后第 n 行数据 
+- NTILE(n)：把有序窗口的行分发到指定数据的组中，各个组有编号，编号从 1 开始，对于每一行，NTILE 返回此行所属的组的编号。注意：n 必须为 int 类型。 
+
+#### 实例
+
+数据准备
+
+```
+jack,2017-01-01,10
+tony,2017-01-02,15
+jack,2017-02-03,23
+tony,2017-01-04,29
+jack,2017-01-05,46
+jack,2017-04-06,42
+tony,2017-01-07,50
+jack,2017-01-08,55
+mart,2017-04-08,62
+mart,2017-04-09,68
+neil,2017-05-10,12
+mart,2017-04-11,75
+neil,2017-06-12,80
+mart,2017-04-13,94
+```
+
+需求：
+
+- 查询在 2017 年 4 月份购买过的顾客及总人数 
+- 查询顾客的购买明细及月购买总额 
+- 上述的场景, 将每个顾客的 cost 按照日期进行累加 
+- 查询每个顾客上次的购买时间 
+- 查询前 20%时间的订单信息 
+
+建表导入数据：
+
+```hive
+create table business(name string,orderdate string,cost int) 
+ROW FORMAT DELIMITED FIELDS TERMINATED BY ','; 
+load data local inpath "/home/zhuweihao/opt/data/business.txt" into table business;
+```
+
+查询在 2017 年 4 月份购买过的顾客及总人数 
+
+```hive
+select name,count(*) over ()  
+from business 
+where substring(orderdate,1,7)='2017-04' 
+group by name;
+```
+
+![image-20220905084915813](HiveSQL.assets/image-20220905084915813.png)
+
+查询顾客的购买明细及月购买总额 
+
+```hive
+select name,orderdate,cost,sum(cost) over(partition by month(orderdate)) from business; 
+```
+
+![image-20220905085007855](HiveSQL.assets/image-20220905085007855.png)
+
+将每个顾客的 cost 按照日期进行累加 
+
+```hive
+select name,orderdate,cost,
+sum(cost) over() as sample1,--所有行相加
+sum(cost) over(partition by name) as sample2,--按 name 分组，组内数据相加 
+sum(cost) over(partition by name order by orderdate) as sample3,--按 name 分组，组内数据累加 
+sum(cost) over(partition by name order by orderdate rows between UNBOUNDED PRECEDING and current row ) as sample4 ,--和 sample3 一样,由起点到 当前行的聚合
+sum(cost) over(partition by name order by orderdate rows between 1 PRECEDING and current row) as sample5, --当前行和前面一行做聚合 
+sum(cost) over(partition by name order by orderdate rows between 1 PRECEDING AND 1 FOLLOWING ) as sample6,--当前行和前边一行及后面一行 
+sum(cost) over(partition by name order by orderdate rows between current row and UNBOUNDED FOLLOWING ) as sample7 --当前行及后面所有行 
+from business;
+```
+
+rows 必须跟在 order by 子句之后，对排序的结果进行限制，使用固定的行数来限制分区中的数据行数量 
+
+![image-20220905085410576](HiveSQL.assets/image-20220905085410576.png)
+
+查看顾客上次的购买时间 
+
+```hive
+select name,orderdate,cost,
+lag(orderdate,1,'1900-01-01') over(partition by name order by orderdate ) as time1,lag(orderdate,2) over (partition by name order by orderdate) as time2  
+from business;
+```
+
+![image-20220905085552366](HiveSQL.assets/image-20220905085552366.png)
+
+查询前 20%时间的订单信息 
+
+```hive
+select * from (
+	select name,orderdate,cost, ntile(5) over(order by orderdate) sorted
+	from business 
+) t 
+where sorted = 1; 
+```
+
+### Rank
+
+#### 函数说明
+
+RANK() 排序相同时会重复，总数不会变 
+DENSE_RANK() 排序相同时会重复，总数会减少 
+ROW_NUMBER() 会根据顺序计算 
+
+#### 数据准备
+
+```
+sun	chinese	87
+sun	math	95
+sun	english	68
+da	chinese	94
+da	math	56
+da	english	84
+song	chinese	64 
+song	math	86
+song	english	84 
+ting	english	65
+ting	math	85
+ting	english	78
+```
+
+建表并导入数据
+
+```hive
+create table score(name string, subject string,score int)
+row format delimited fields terminated by "\t"; 
+load data local inpath '/home/zhuweihao/opt/data/score.txt' into table score;
+```
+
+计算每门学科成绩排名
+
+```hive
+select name, subject, score, 
+rank() over(partition by subject order by score desc) rp, 
+dense_rank() over(partition by subject order by score desc) drp, row_number() over(partition by subject order by score desc) rmp 
+from score; 
+```
+
+![image-20220905090536583](HiveSQL.assets/image-20220905090536583.png)
+
+## 自定义函数
+
+UDF、UDAF、UDTF
