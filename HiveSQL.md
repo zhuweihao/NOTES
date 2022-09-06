@@ -175,6 +175,10 @@ CREATE [EXTERNAL] TABLE [IF NOT EXISTS] table_name
 
 ## 数据导入
 
+测试：导入orc数据
+
+
+
 ### 向表中装载数据（Load）
 
 ```hive
@@ -282,6 +286,18 @@ location '/student';
 ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t'
 select * from student;
 ```
+
+-----
+
+问题：
+
+不能正常导出
+
+----
+
+
+
+
 
 将查询的结果导出到HDFS上（没有local）
 
@@ -600,6 +616,14 @@ select ename, deptno, sal from emp order by deptno, sal;
 
 ### 每个Reduce内部排序（Sort By） 
 
+----
+
+使用场景：？
+
+----
+
+
+
 Sort By：对于大规模的数据集 order by 的效率非常低。在很多情况下，并不需要全局排序，此时可以使用 sort by。 
 Sort by 为每个 reducer 产生一个排序文件。每个 Reducer 内部进行排序，对全局结果集来说不是排序。 
 
@@ -729,6 +753,14 @@ group by dept_id;
 
 ### 行转列
 
+----
+
+实例：
+
+字段A，B，C，D两两组合输出，转成（A,B),(B,C)，，，，，，
+
+----
+
 CONCAT(string A/col, string B/col…)：返回输入字符串连接后的结果，支持任意个输入字符串; 
 
 CONCAT_WS(separator, str1, str2,...)：它是一个特殊形式的 CONCAT()。第一个参数剩余参数间的分隔符。分隔符可以是与剩余参数一样的字符串。如果分隔符是 NULL，返回值也将为 NULL。这个函数会跳过分隔符参数后的任何 NULL 和空字符串。分隔符将被加到被连接的字符串之间; 
@@ -808,6 +840,16 @@ lateral VIEW explode(split(category,",")) movie_info_tmp AS category_name;
 ![image-20220905083834264](HiveSQL.assets/image-20220905083834264.png)
 
 ### 窗口函数（开窗函数）
+
+----
+
+spark窗口函数中的shuffle过程
+
+比较重要
+
+-----
+
+
 
 #### 相关函数说明
 
@@ -1080,7 +1122,16 @@ show partitions dept_partition;
 desc formatted dept_partition;
 ```
 
-<img src="HiveSQL.assets/image-20220905194658308.png" alt="image-20220905194658308" style="zoom: 67%;" />
+
+
+<img src="HiveSQL.assets/image-20220905194658308.png" alt="image-20220905194658308"  />
+
+```
+是否会查询出分区字段（正常应该是不会查询出分区字段，会引起麻烦）
+select * from dept_partition 
+```
+
+
 
 ### 二级分区
 
@@ -1334,7 +1385,16 @@ select * from stu_buck;
 
 分桶规则：
 
-根据结果可知：Hive 的分桶采用对分桶字段的值进行哈希，然后除以桶的个数求余的方 式决定该条记录存放在哪个桶当中
+根据结果可知：Hive 的分桶采用对分桶字段的值进行哈希，然后除以桶的个数求余的方式决定该条记录存放在哪个桶当中
 
 ----
 
+分桶策略的实际使用
+
+与shuffle的关系
+
+spark中的分桶
+
+
+
+![image-20220906111341423](HiveSQL.assets/image-20220906111341423.png)
