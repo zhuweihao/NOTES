@@ -1056,8 +1056,8 @@ select name,orderdate,cost,
 sum(cost) over() as sample1,--所有行相加
 sum(cost) over(partition by name) as sample2,--按 name 分组，组内数据相加 
 sum(cost) over(partition by name order by orderdate) as sample3,--按 name 分组，组内数据累加 
-sum(cost) over(partition by name order by orderdate rows between UNBOUNDED PRECEDING and current row ) as sample4 ,--和 sample3 一样,由起点到 当前行的聚合
-sum(cost) over(partition by name order by orderdate rows between 1 PRECEDING and current row) as sample5, --当前行和前面一行做聚合 
+sum(cost) over(partition by name order by orderdate rows between UNBOUNDED PRECEDING and current row ) as sample4 ,--和 sample3 一样,由起点到当前行的聚合
+sum(cost) over(partition by name order by orderdate rows between 1 PRECEDING and current row) as sample5,--当前行和前面一行做聚合 
 sum(cost) over(partition by name order by orderdate rows between 1 PRECEDING AND 1 FOLLOWING ) as sample6,--当前行和前边一行及后面一行 
 sum(cost) over(partition by name order by orderdate rows between current row and UNBOUNDED FOLLOWING ) as sample7 --当前行及后面所有行 
 from business;
@@ -1065,13 +1065,14 @@ from business;
 
 rows 必须跟在 order by 子句之后，对排序的结果进行限制，使用固定的行数来限制分区中的数据行数量 
 
-![image-20220905085410576](HiveSQL.assets/image-20220905085410576.png)
+![image-20220913135533972](HiveSQL.assets/image-20220913135533972.png)
 
 查看顾客上次的购买时间 
 
 ```hive
 select name,orderdate,cost,
-lag(orderdate,1,'1900-01-01') over(partition by name order by orderdate ) as time1,lag(orderdate,2) over (partition by name order by orderdate) as time2  
+lag(orderdate,1,'1900-01-01') over(partition by name order by orderdate ) as time1,
+lag(orderdate,2) over (partition by name order by orderdate) as time2  
 from business;
 ```
 
@@ -1080,12 +1081,12 @@ from business;
 查询前 20%时间的订单信息 
 
 ```hive
-select * from (
-	select name,orderdate,cost, ntile(5) over(order by orderdate) sorted
-	from business 
-) t 
-where sorted = 1; 
+hive (default)> select * from(
+              > select name,orderdate,cost,ntile(5) over(order by orderdate) sorted from business) t
+              > where sorted=1; 
 ```
+
+![image-20220913142813308](HiveSQL.assets/image-20220913142813308.png)
 
 ### Rank
 
