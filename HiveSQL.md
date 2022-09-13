@@ -968,13 +968,150 @@ lateral VIEW explode(split(category,",")) movie_info_tmp AS category_name;
 
 
 
-### 窗口函数（开窗函数）
+### ***窗口函数（开窗函数）
 
 ----
+
+#### Spark中的窗口函数
 
 spark窗口函数中的shuffle过程
 
 比较重要
+
+构造数据集
+
+```scala
+object test {
+  def main(args: Array[String]): Unit = {
+    val sparkConf = new SparkConf().setMaster("local").setAppName("windowfunction")
+    val sparkSession: SparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
+
+    val data = Array(
+      ("lili", "ml", 90),
+      ("lucy", "ml", 85),
+      ("cherry", "ml", 80),
+      ("terry", "ml", 85),
+      ("tracy", "cs", 82),
+      ("tony", "cs", 86),
+      ("tom", "cs", 75)
+    )
+
+    val schemas = Seq("name", "subject", "score")
+    val df = sparkSession.createDataFrame(data).toDF(schemas: _*)
+    
+    df.show()
+  }
+}
+```
+
+![image-20220913160459794](HiveSQL.assets/image-20220913160459794.png)
+
+
+
+一个窗口需要定义三个部分：
+
+1. 分组问题，如何将行分组？在选取窗口数据时，只对组内数据生效
+2. 排序问题，按何种方式进行排序？选取窗口数据时，会首先按指定方式排序
+3. 帧(frame)选取，以当前行为基准，如何选取周围行？
+
+对照上面的三个部分，窗口函数的语法一般为：
+
+```hive
+window_func(args) OVER ( 
+    [PARTITION BY col_name, col_name, ...] 
+    [ORDER BY col_name, col_name, ...] 
+    [ROWS | RANGE BETWEEN 
+     (CURRENT ROW | (UNBOUNDED |[num]) PRECEDING)
+     AND 
+     (CURRENT ROW | ( UNBOUNDED | [num]) FOLLOWING)
+    ] 
+)
+```
+
+其中
+window_func就是窗口函数
+over表示这是个窗口函数
+partition by对应的就是分组，即按照什么列分组
+order by对应的是排序，按什么列排序
+rows则对应的帧选取。
+
+spark中的window_func包括下面三类：
+
+1. 排名函数(ranking function) 包括rank，dense_rank，row_number，percent_rank，ntile等。
+2. 分析函数 (analytic functions) 包括cume_dist，lag等。
+3. 聚合函数(aggregate functions)，就是我们常用的max, min, sum, avg等。
+
+查看每个专业学生的排名
+
+```scala
+object test {
+  def main(args: Array[String]): Unit = {
+    val sparkConf = new SparkConf().setMaster("local").setAppName("windowfunction")
+    val sparkSession: SparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
+    val sqlContext: SQLContext = sparkSession.sqlContext
+
+    val data = Array(
+      ("lili", "ml", 90),
+      ("lucy", "ml", 85),
+      ("cherry", "ml", 80),
+      ("terry", "ml", 85),
+      ("tracy", "cs", 82),
+      ("tony", "cs", 86),
+      ("tom", "cs", 75)
+    )
+
+    val schemas = Seq("name", "subject", "score")
+    val df = sparkSession.createDataFrame(data).toDF(schemas: _*)
+
+    df.createOrReplaceTempView("person_subject_score")
+
+    val sqltext = "select name, subject, score, rank() over (partition by subject order by score desc) as rank from person_subject_score";
+    val ret = sqlContext.sql(sqltext).explain(extended = true)
+    //ret.show()
+    
+    Thread.sleep(500000)
+  }
+}
+```
+
+![image-20220913162553009](HiveSQL.assets/image-20220913162553009.png)
+
+<img src="HiveSQL.assets/image-20220913194217893.png" alt="image-20220913194217893" style="zoom: 67%;" />
+
+<img src="HiveSQL.assets/image-20220913162540734.png" alt="image-20220913162540734" style="zoom:67%;" />
+
+<img src="HiveSQL.assets/image-20220913194248971.png" alt="image-20220913194248971" style="zoom:67%;" />
+
+```
+== Parsed Logical Plan ==
+'Project ['name, 'subject, 'score, 'rank() windowspecdefinition('subject, 'score DESC NULLS LAST, unspecifiedframe$()) AS rank#12]
++- 'UnresolvedRelation [person_subject_score], [], false
+
+== Analyzed Logical Plan ==
+name: string, subject: string, score: int, rank: int
+Project [name#6, subject#7, score#8, rank#12]
++- Project [name#6, subject#7, score#8, rank#12, rank#12]
+   +- Window [rank(score#8) windowspecdefinition(subject#7, score#8 DESC NULLS LAST, specifiedwindowframe(RowFrame, unboundedpreceding$(), currentrow$())) AS rank#12], [subject#7], [score#8 DESC NULLS LAST]
+      +- Project [name#6, subject#7, score#8]
+         +- SubqueryAlias person_subject_score
+            +- View (`person_subject_score`, [name#6,subject#7,score#8])
+               +- Project [_1#0 AS name#6, _2#1 AS subject#7, _3#2 AS score#8]
+                  +- LocalRelation [_1#0, _2#1, _3#2]
+
+== Optimized Logical Plan ==
+Window [rank(score#8) windowspecdefinition(subject#7, score#8 DESC NULLS LAST, specifiedwindowframe(RowFrame, unboundedpreceding$(), currentrow$())) AS rank#12], [subject#7], [score#8 DESC NULLS LAST]
++- LocalRelation [name#6, subject#7, score#8]
+
+== Physical Plan ==
+AdaptiveSparkPlan isFinalPlan=false
++- Window [rank(score#8) windowspecdefinition(subject#7, score#8 DESC NULLS LAST, specifiedwindowframe(RowFrame, unboundedpreceding$(), currentrow$())) AS rank#12], [subject#7], [score#8 DESC NULLS LAST]
+   +- Sort [subject#7 ASC NULLS FIRST, score#8 DESC NULLS LAST], false, 0
+      +- Exchange hashpartitioning(subject#7, 200), ENSURE_REQUIREMENTS, [id=#11]
+         +- LocalTableScan [name#6, subject#7, score#8]
+
+```
+
+
 
 -----
 
