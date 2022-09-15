@@ -217,14 +217,14 @@ create table student_par(id int, name string) partitioned by (month string) row 
 插入基本数据
 
 ```hive
-insert into table  student_par partition(month='201709') values(1,'wangwu'),(2,'zhaoliu'); 
+insert into table student_par partition(month='201709') values(1,'wangwu'),(2,'zhaoliu');
 ```
 
 基本模式插入（根据单张表查询结果）
 
 ```hive
-insert overwrite table student partition(month='201708') 
-select id, name from student where month='201709'; 
+insert overwrite table student_par partition(month='201708') 
+select id, name from student_par where month='201709'; 
 ```
 
 insert into：以追加数据的方式插入到表或分区，原有数据不会删除 
@@ -234,10 +234,10 @@ insert overwrite：会覆盖表或分区中已存在的数据
 多表（多分区）插入模式（根据多张表查询结果）
 
 ```hive
-from student               
-insert overwrite table student partition(month='201707')               
-select id, name where month='201709'               
-insert overwrite table student partition(month='201706')               
+from student_par
+insert overwrite table student_par partition(month='201707')
+select id, name where month='201709'
+insert overwrite table student_par partition(month='201706')
 select id, name where month='201709'; 
 ```
 
@@ -246,6 +246,10 @@ select id, name where month='201709';
 问题：
 
 ![image-20220904214627430](HiveSQL.assets/image-20220904214627430.png)
+
+已解决：
+
+表名写错了，注意是student_par不是student
 
 ----
 
@@ -282,7 +286,7 @@ location '/student';
 将查询的结果格式化导出到本地
 
 ```hive
->insert overwrite local directory '/home/zhuweihao/opt/data/student'
+insert overwrite local directory '/home/zhuweihao/opt/data/student'
 ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t'
 select * from student;
 ```
@@ -293,25 +297,41 @@ select * from student;
 
 不能正常导出
 
+解决：
+
+隔了一段时间重试了一次成功了，，，，，，
+
+![image-20220907143241849](HiveSQL.assets/image-20220907143241849.png)
+
 ----
-
-
-
-
 
 将查询的结果导出到HDFS上（没有local）
 
 ```hive
-insert overwrite directory '/student'
+insert overwrite directory '/student/student'
 ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t'
 select * from student; 
 ```
 
+![image-20220907143224463](HiveSQL.assets/image-20220907143224463.png)
+
 ### Hadoop命令导出到本地
 
-```hive
-dfs -get /user/hive/warehouse/student/month=202209/000000_0 /home/zhuweihao/opt/data/student/student3.txt;
 ```
+dfs -get /user/hive/warehouse/student_par/month=201709/000000_0 /home/zhuweihao/opt/data/student/student3.txt;
+```
+
+![image-20220907144154498](HiveSQL.assets/image-20220907144154498.png)
+
+### Export导出到HDFS上
+
+```hive
+export table default.student_par to '/user/hive/warehouse/export/student';
+```
+
+![image-20220907144532195](HiveSQL.assets/image-20220907144532195.png)
+
+export 和 import 主要用于两个 Hadoop 平台集群之间 Hive 表迁移。
 
 
 
@@ -596,7 +616,7 @@ select * from emp order by sal;
 select * from emp order by sal desc; 
 ```
 
-### 按照别名排序 
+#### 按照别名排序 
 
 按照员工薪水的 2 倍排序 
 
@@ -604,7 +624,7 @@ select * from emp order by sal desc;
 select ename, sal*2 twosal from emp order by twosal; 
 ```
 
-### 多个列排序 
+#### 多个列排序 
 
 按照部门和工资升序排序 
 
@@ -628,17 +648,25 @@ Sort By：对于大规模的数据集 order by 的效率非常低。在很多情
 Sort by 为每个 reducer 产生一个排序文件。每个 Reducer 内部进行排序，对全局结果集来说不是排序。 
 
 ```hive
-hive (default)> set mapreduce.job.reduces=3; 
-hive (default)> set mapreduce.job.reduces;
-mapreduce.job.reduces=3
-hive (default)> select * from emp sort by deptno desc; 
+设置reduce的个数
+set mapreduce.job.reduces=3;
+查看reduce的个数
+set mapreduce.job.reduces;
+根据部门编号降序查看员工信息
+select * from emp sort by deptno desc;
+将查询结果导入到文件中（按照部门编号降序排序）
+insert overwrite local directory '/home/zhuweihao/opt/data/sortby-result'
+ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t'
+select * from emp sort by deptno desc;
 ```
 
-![image-20220905003002671](HiveSQL.assets/image-20220905003002671.png)
+![image-20220907150622329](HiveSQL.assets/image-20220907150622329.png)
+
+
 
 ### 分区（Distribute By）
 
-Distribute By： 在有些情况下，我们需要控制某个特定行应该到哪个 reducer，通常是为了进行后续的聚集操作。distribute by 子句可以做这件事。distribute by 类似 MR 中 partition（自定义分区），进行分区，结合 sort by 使用。  
+Distribute By： 在有些情况下，我们需要控制某个特定行应该到哪个reducer，通常是为了进行后续的聚集操作。distribute by子句可以做这件事。distribute by类似MR中 partition（自定义分区），进行分区，结合sort by使用。
 对于 distribute by 进行测试，一定要分配多 reduce 进行处理，否则无法看到 distribute by 的效果。
 
 先按照部门编号分区，再按照员工编号降序排序。 
@@ -667,15 +695,45 @@ hive (default)> select * from emp distribute by deptno sort by empno desc;
 cluster by 除了具有 distribute by 的功能外还兼具 sort by 的功能。但是排序只能是升序排序，不能指定排序规则为 ASC 或者 DESC。 
 
 ```hive
-以下两种写法等价 
-select * from emp cluster by deptno; 
-select * from emp distribute by deptno sort by deptno; 
+以下两种写法等价
+select * from emp cluster by deptno;
+select * from emp distribute by deptno sort by deptno;
 ```
 
-注意：按照部门编号分区，不一定就是固定死的数值，可以是 20 号和 30 号部门分到一
-个分区里面去
+注意：按照部门编号分区，不一定就是固定死的数值，可以是 20 号和 30 号部门分到一个分区里面去
 
 
+
+### 总结
+
+#### order by
+
+- order by 会对输入做全排序，因此只有一个Reducer(多个Reducer无法保证全局有序)，然而只有一个Reducer，会导致当输入规模较大时，消耗较长的计算时间。
+
+#### sort by
+
+- sort by不是全局排序，其在数据进入reducer前完成排序。
+- 因此，如果用sort by进行排序，并且设置mapred.reduce.mode属性的影响，sort by只会保证每个reducer的输出有序，并不保证全局有序。
+- sort by 不同于 order by，它不受hive.mapred.mode属性的影响，sort by的数据只能保证在同一个reduce中的数据可以按指定字段排序。
+- 使用sort by 可以指定执行的reduce个数(通过set mapred.reduce.tasks=n来指定)，对输出的数据再执行归并排序，即可得到全部结果
+
+#### distribute by
+
+- 是控制在map端如何拆分数据给reduce端的。
+- Hive会根据distribute by后面列，对应reduce的个数进行分发，默认使用hash算法。
+- sort by为每个reduce产生一个排序文件。
+- 在某些情况下，为了进行后续的聚合操作，需要控制某个特定行应该到哪个reducer。
+- distribute by 经常和sort by配合使用。
+- distribute by 和 sort by的使用场景
+  - Map输出的文件大小不均
+  - Reduce输出文件大小不均
+  - 小文件过多
+  - 文件超大
+
+#### cluster by
+
+- cluster by除了具有distribute by的功能外还兼具sort by的功能。
+- 但是排序只能是倒叙排序，不能指定排序规则为ASC或DESC。
 
 # 函数
 
@@ -751,6 +809,8 @@ group by dept_id;
 
 ![image-20220905005137809](HiveSQL.assets/image-20220905005137809.png)
 
+
+
 ### 行转列
 
 ----
@@ -763,9 +823,9 @@ group by dept_id;
 
 CONCAT(string A/col, string B/col…)：返回输入字符串连接后的结果，支持任意个输入字符串; 
 
-CONCAT_WS(separator, str1, str2,...)：它是一个特殊形式的 CONCAT()。第一个参数剩余参数间的分隔符。分隔符可以是与剩余参数一样的字符串。如果分隔符是 NULL，返回值也将为 NULL。这个函数会跳过分隔符参数后的任何 NULL 和空字符串。分隔符将被加到被连接的字符串之间; 
+CONCAT_WS(separator, str1, str2,...)：它是一个特殊形式的 CONCAT()。第一个参数是剩余参数间的分隔符。分隔符可以是与剩余参数一样的字符串。如果分隔符是 NULL，返回值也将为 NULL。这个函数会跳过分隔符参数后的任何 NULL 和空字符串。分隔符将被加到被连接的字符串之间；
 
-注意: CONCAT_WS must be "string or array<string> 
+注意: CONCAT_WS must be "string or array<string>"
 
 COLLECT_SET(col)：函数只接受基本数据类型，它的主要作用是将某字段的值进行去重汇总，产生 Array 类型字段。 
 
@@ -803,6 +863,67 @@ GROUP BY t1.c_b
 
 ![image-20220905010929234](HiveSQL.assets/image-20220905010929234.png)
 
+
+
+#### 示例
+
+出处：[(22条消息) Hive行列转换_微亮之海的博客-CSDN博客_hive 行列转换](https://blog.csdn.net/weixin_42913992/article/details/124966439)
+
+| 姓名(name) | 学科(subject) | 成绩(score) |
+| ---------- | ------------- | ----------- |
+| A          | 语文          | 70          |
+| A          | 数学          | 80          |
+| A          | 英语          | 90          |
+| B          | 语文          | 75          |
+| B          | 数学          | 85          |
+| B          | 英语          | 95          |
+
+如果需要将上⾯的样例表转换为
+
+姓名 | 语⽂成绩 | 数学成绩 | 英语成绩
+
+这样的格式，就是 **多行转多列**
+
+思路：
+涉及到行转成列，肯定是会按照某⼀列或者某⼏列的值进⾏分组来压缩⾏数，所以会⽤到group by。
+分组之后需要⽤到聚合函数，由于多列中的每列只关⼼⾃⼰对应的数据，所以要使⽤case语句进⾏选择，⾄于聚合函数，只要数据能保证唯一性，max、min、avg(数值类型)等都可以
+
+数据准备：
+
+```
+A	chinese	70
+A	math	80
+A	english	90
+B	chinese	75
+B	math	85
+B	english	95
+```
+
+建表并导入数据：
+
+```hive
+create table student_score(name string,subject string,score int) 
+row format delimited fields terminated by "\t";
+
+load data local inpath "/home/zhuweihao/opt/data/student_score.txt" into table student_score;
+```
+
+多行转多列
+
+```hive
+select
+  name
+  ,max(case subject when 'chinese' then score else 0 end) chinese
+  ,max(case subject when 'math' then score else 0 end) math
+  ,max(case subject when 'english' then score else 0 end) english
+from student_score
+group by name;
+```
+
+
+
+
+
 ### 列转行
 
 EXPLODE(col)：将 hive 一列中复杂的 Array 或者 Map 结构拆分成多行。 
@@ -830,22 +951,169 @@ load data local inpath "/home/zhuweihao/opt/data/movie_info.txt" into table movi
 将电影分类中的数组数据展开
 
 ```hive
-SELECT 
+SELECT
 	movie, category_name 
-FROM 
-	movie_info 
+FROM
+	movie_info
 lateral VIEW explode(split(category,",")) movie_info_tmp AS category_name; 
 ```
 
 ![image-20220905083834264](HiveSQL.assets/image-20220905083834264.png)
 
-### 窗口函数（开窗函数）
+### 行列转换小结
+
+感觉行列转换这个说法不太准确，很容易给人造成误解
+
+行转列其实就是多行转换为一行
+
+列换行其实就是一行转换为多行
+
+
+
+### ***窗口函数（开窗函数）
 
 ----
+
+#### Spark中的窗口函数
 
 spark窗口函数中的shuffle过程
 
 比较重要
+
+构造数据集
+
+```scala
+object test {
+  def main(args: Array[String]): Unit = {
+    val sparkConf = new SparkConf().setMaster("local").setAppName("windowfunction")
+    val sparkSession: SparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
+
+    val data = Array(
+      ("lili", "ml", 90),
+      ("lucy", "ml", 85),
+      ("cherry", "ml", 80),
+      ("terry", "ml", 85),
+      ("tracy", "cs", 82),
+      ("tony", "cs", 86),
+      ("tom", "cs", 75)
+    )
+
+    val schemas = Seq("name", "subject", "score")
+    val df = sparkSession.createDataFrame(data).toDF(schemas: _*)
+    
+    df.show()
+  }
+}
+```
+
+![image-20220913160459794](HiveSQL.assets/image-20220913160459794.png)
+
+
+
+一个窗口需要定义三个部分：
+
+1. 分组问题，如何将行分组？在选取窗口数据时，只对组内数据生效
+2. 排序问题，按何种方式进行排序？选取窗口数据时，会首先按指定方式排序
+3. 帧(frame)选取，以当前行为基准，如何选取周围行？
+
+对照上面的三个部分，窗口函数的语法一般为：
+
+```hive
+window_func(args) OVER ( 
+    [PARTITION BY col_name, col_name, ...] 
+    [ORDER BY col_name, col_name, ...] 
+    [ROWS | RANGE BETWEEN 
+     (CURRENT ROW | (UNBOUNDED |[num]) PRECEDING)
+     AND 
+     (CURRENT ROW | ( UNBOUNDED | [num]) FOLLOWING)
+    ] 
+)
+```
+
+其中
+window_func就是窗口函数
+over表示这是个窗口函数
+partition by对应的就是分组，即按照什么列分组
+order by对应的是排序，按什么列排序
+rows则对应的帧选取。
+
+spark中的window_func包括下面三类：
+
+1. 排名函数(ranking function) 包括rank，dense_rank，row_number，percent_rank，ntile等。
+2. 分析函数 (analytic functions) 包括cume_dist，lag等。
+3. 聚合函数(aggregate functions)，就是我们常用的max, min, sum, avg等。
+
+查看每个专业学生的排名
+
+```scala
+object test {
+  def main(args: Array[String]): Unit = {
+    val sparkConf = new SparkConf().setMaster("local").setAppName("windowfunction")
+    val sparkSession: SparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
+    val sqlContext: SQLContext = sparkSession.sqlContext
+
+    val data = Array(
+      ("lili", "ml", 90),
+      ("lucy", "ml", 85),
+      ("cherry", "ml", 80),
+      ("terry", "ml", 85),
+      ("tracy", "cs", 82),
+      ("tony", "cs", 86),
+      ("tom", "cs", 75)
+    )
+
+    val schemas = Seq("name", "subject", "score")
+    val df = sparkSession.createDataFrame(data).toDF(schemas: _*)
+
+    df.createOrReplaceTempView("person_subject_score")
+
+    val sqltext = "select name, subject, score, rank() over (partition by subject order by score desc) as rank from person_subject_score";
+    val ret = sqlContext.sql(sqltext).explain(extended = true)
+    //ret.show()
+    
+    Thread.sleep(500000)
+  }
+}
+```
+
+![image-20220913162553009](HiveSQL.assets/image-20220913162553009.png)
+
+<img src="HiveSQL.assets/image-20220913194217893.png" alt="image-20220913194217893" style="zoom: 67%;" />
+
+<img src="HiveSQL.assets/image-20220913162540734.png" alt="image-20220913162540734" style="zoom:67%;" />
+
+<img src="HiveSQL.assets/image-20220913194248971.png" alt="image-20220913194248971" style="zoom:67%;" />
+
+```
+== Parsed Logical Plan ==
+'Project ['name, 'subject, 'score, 'rank() windowspecdefinition('subject, 'score DESC NULLS LAST, unspecifiedframe$()) AS rank#12]
++- 'UnresolvedRelation [person_subject_score], [], false
+
+== Analyzed Logical Plan ==
+name: string, subject: string, score: int, rank: int
+Project [name#6, subject#7, score#8, rank#12]
++- Project [name#6, subject#7, score#8, rank#12, rank#12]
+   +- Window [rank(score#8) windowspecdefinition(subject#7, score#8 DESC NULLS LAST, specifiedwindowframe(RowFrame, unboundedpreceding$(), currentrow$())) AS rank#12], [subject#7], [score#8 DESC NULLS LAST]
+      +- Project [name#6, subject#7, score#8]
+         +- SubqueryAlias person_subject_score
+            +- View (`person_subject_score`, [name#6,subject#7,score#8])
+               +- Project [_1#0 AS name#6, _2#1 AS subject#7, _3#2 AS score#8]
+                  +- LocalRelation [_1#0, _2#1, _3#2]
+
+== Optimized Logical Plan ==
+Window [rank(score#8) windowspecdefinition(subject#7, score#8 DESC NULLS LAST, specifiedwindowframe(RowFrame, unboundedpreceding$(), currentrow$())) AS rank#12], [subject#7], [score#8 DESC NULLS LAST]
++- LocalRelation [name#6, subject#7, score#8]
+
+== Physical Plan ==
+AdaptiveSparkPlan isFinalPlan=false
++- Window [rank(score#8) windowspecdefinition(subject#7, score#8 DESC NULLS LAST, specifiedwindowframe(RowFrame, unboundedpreceding$(), currentrow$())) AS rank#12], [subject#7], [score#8 DESC NULLS LAST]
+   +- Sort [subject#7 ASC NULLS FIRST, score#8 DESC NULLS LAST], false, 0
+      +- Exchange hashpartitioning(subject#7, 200), ENSURE_REQUIREMENTS, [id=#11]
+         +- LocalTableScan [name#6, subject#7, score#8]
+
+```
+
+
 
 -----
 
@@ -927,8 +1195,8 @@ select name,orderdate,cost,
 sum(cost) over() as sample1,--所有行相加
 sum(cost) over(partition by name) as sample2,--按 name 分组，组内数据相加 
 sum(cost) over(partition by name order by orderdate) as sample3,--按 name 分组，组内数据累加 
-sum(cost) over(partition by name order by orderdate rows between UNBOUNDED PRECEDING and current row ) as sample4 ,--和 sample3 一样,由起点到 当前行的聚合
-sum(cost) over(partition by name order by orderdate rows between 1 PRECEDING and current row) as sample5, --当前行和前面一行做聚合 
+sum(cost) over(partition by name order by orderdate rows between UNBOUNDED PRECEDING and current row ) as sample4 ,--和 sample3 一样,由起点到当前行的聚合
+sum(cost) over(partition by name order by orderdate rows between 1 PRECEDING and current row) as sample5,--当前行和前面一行做聚合 
 sum(cost) over(partition by name order by orderdate rows between 1 PRECEDING AND 1 FOLLOWING ) as sample6,--当前行和前边一行及后面一行 
 sum(cost) over(partition by name order by orderdate rows between current row and UNBOUNDED FOLLOWING ) as sample7 --当前行及后面所有行 
 from business;
@@ -936,13 +1204,14 @@ from business;
 
 rows 必须跟在 order by 子句之后，对排序的结果进行限制，使用固定的行数来限制分区中的数据行数量 
 
-![image-20220905085410576](HiveSQL.assets/image-20220905085410576.png)
+![image-20220913135533972](HiveSQL.assets/image-20220913135533972.png)
 
 查看顾客上次的购买时间 
 
 ```hive
 select name,orderdate,cost,
-lag(orderdate,1,'1900-01-01') over(partition by name order by orderdate ) as time1,lag(orderdate,2) over (partition by name order by orderdate) as time2  
+lag(orderdate,1,'1900-01-01') over(partition by name order by orderdate ) as time1,
+lag(orderdate,2) over (partition by name order by orderdate) as time2  
 from business;
 ```
 
@@ -951,12 +1220,12 @@ from business;
 查询前 20%时间的订单信息 
 
 ```hive
-select * from (
-	select name,orderdate,cost, ntile(5) over(order by orderdate) sorted
-	from business 
-) t 
-where sorted = 1; 
+hive (default)> select * from(
+              > select name,orderdate,cost,ntile(5) over(order by orderdate) sorted from business) t
+              > where sorted=1; 
 ```
+
+![image-20220913142813308](HiveSQL.assets/image-20220913142813308.png)
 
 ### Rank
 
@@ -1389,11 +1658,57 @@ select * from stu_buck;
 
 ----
 
+<<<<<<< HEAD
 分桶策略的实际使用
 
 与shuffle的关系
 
 spark中的分桶
+=======
+# 压缩和存储
+
+
+
+## Hadoop压缩配置
+
+
+
+### MR支持的压缩编码
+
+| 压缩格式 | 算法    | 文件扩展名 | 是否可切分 |
+| -------- | ------- | ---------- | ---------- |
+| DEFLATE  | DEFLATE | .deflate   | 否         |
+| Gzip     | DEFLATE | .gz        | 否         |
+| bzip     | bzip2   | .bz2       | 是         |
+| LZO      | LZO     | .lzo       | 是         |
+| Snappy   | Snappy  | .snappy    | 否         |
+
+为了支持多种压缩/解压缩算法，Hadoop 引入了编码/解码器
+
+| 压缩格式 | 对应的编码/解码器                          |
+| -------- | ------------------------------------------ |
+| DEFLATE  | org.apache.hadoop.io.compress.DefaultCodec |
+| Gzip     | org.apache.hadoop.io.compress.GzipCodec    |
+| bzip     | org.apache.hadoop.io.compress.BZip2Codec   |
+| LZO      | com.hadoop.compression.lzo.LzopCodec       |
+| Snappy   | org.apache.hadoop.io.compress.SnappyCodec  |
+
+压缩性能比较：
+
+> On a single core of a Core i7 processor in 64-bit mode, Snappy compresses at about 250 MB/sec or more and decompresses at about 500 MB/sec or more. http://google.github.io/snappy/
+
+| 压缩算法 | 原始文件大小 | 压缩文件大小 | 压缩速度 | 解压速度 |
+| :------- | :----------- | :----------- | :------- | :------- |
+| gzip     | 8.3GB        | 1.8GB        | 17.5MB/s | 58MB/s   |
+| bzip2    | 8.3GB        | 1.1GB        | 2.4MB/s  | 9.5MB/s  |
+| LZO      | 8.3GB        | 2.9GB        | 49.3MB/s | 74.6MB/s |
+
+### 压缩参数配置
+
+
+
+
+>>>>>>> 0f7045f8549d24c77ff50faf5721d8f042e73b81
 
 
 
