@@ -1111,7 +1111,202 @@ AdaptiveSparkPlan isFinalPlan=false
 
 ```
 
+在spark UI（SQL/DataFrame）中可以进一步查看具体的执行过程
 
+![image-20220916102401506](HiveSQL.assets/image-20220916102401506.png)
+
+![image-20220916102418286](HiveSQL.assets/image-20220916102418286.png)
+
+
+
+```
+== Physical Plan ==
+AdaptiveSparkPlan (11)
++- == Final Plan ==
+   * Project (7)
+   +- Window (6)
+      +- * Sort (5)
+         +- AQEShuffleRead (4)
+            +- ShuffleQueryStage (3), Statistics(sizeInBytes=336.0 B, rowCount=7)
+               +- Exchange (2)
+                  +- LocalTableScan (1)
++- == Initial Plan ==
+   Project (10)
+   +- Window (9)
+      +- Sort (8)
+         +- Exchange (2)
+            +- LocalTableScan (1)
+
+
+(1) LocalTableScan
+Output [3]: [name#6, subject#7, score#8]
+Arguments: [name#6, subject#7, score#8]
+
+(2) Exchange
+Input [3]: [name#6, subject#7, score#8]
+Arguments: hashpartitioning(subject#7, 200), ENSURE_REQUIREMENTS, [id=#15]
+
+(3) ShuffleQueryStage
+Output [3]: [name#6, subject#7, score#8]
+Arguments: 0
+
+(4) AQEShuffleRead
+Input [3]: [name#6, subject#7, score#8]
+Arguments: coalesced
+
+(5) Sort [codegen id : 1]
+Input [3]: [name#6, subject#7, score#8]
+Arguments: [subject#7 ASC NULLS FIRST, score#8 DESC NULLS LAST], false, 0
+
+(6) Window
+Input [3]: [name#6, subject#7, score#8]
+Arguments: [rank(score#8) windowspecdefinition(subject#7, score#8 DESC NULLS LAST, specifiedwindowframe(RowFrame, unboundedpreceding$(), currentrow$())) AS rank#12], [subject#7], [score#8 DESC NULLS LAST]
+
+(7) Project [codegen id : 2]
+Output [4]: [name#6, subject#7, cast(score#8 as string) AS score#31, cast(rank#12 as string) AS rank#32]
+Input [4]: [name#6, subject#7, score#8, rank#12]
+
+(8) Sort
+Input [3]: [name#6, subject#7, score#8]
+Arguments: [subject#7 ASC NULLS FIRST, score#8 DESC NULLS LAST], false, 0
+
+(9) Window
+Input [3]: [name#6, subject#7, score#8]
+Arguments: [rank(score#8) windowspecdefinition(subject#7, score#8 DESC NULLS LAST, specifiedwindowframe(RowFrame, unboundedpreceding$(), currentrow$())) AS rank#12], [subject#7], [score#8 DESC NULLS LAST]
+
+(10) Project
+Output [4]: [name#6, subject#7, cast(score#8 as string) AS score#31, cast(rank#12 as string) AS rank#32]
+Input [4]: [name#6, subject#7, score#8, rank#12]
+
+(11) AdaptiveSparkPlan
+Output [4]: [name#6, subject#7, score#31, rank#32]
+Arguments: isFinalPlan=true
+```
+
+
+
+##### Spark SQL执行计划
+
+在Spark SQL中，执行计划是了解SQL执行详细信息的利器。 它包含许多有用的信息，清晰地描述了计划是如何执行的。在我们发现某些SQL执行效率低下时，可以根据执行计划中的信息，来发现效率低下的问题，并可以修改部分SQL查询语句或者调整参数以获得更好的执行性能。
+
+Spark SQL中的执行计划分为两种：
+
+- 逻辑执行计划：
+  - 逻辑执行计划是对需要执行的所有转换步骤的简单描述，并不涉及具体该怎么执行。
+  - SparkContext负责生成和保存逻辑执行计划。
+  - 逻辑执行计划是对特定的表进行一系列的转换操作，例如：Join、Filter、where、groupby等等，它描述的是SQL语句想要的执行图。
+- 物理执行计划
+  - 物理执行计划是确定连接的类型、分区的数量、过滤器、where、groupBy子句的执行顺序等等。
+
+
+
+执行计划流程图
+
+![img](HiveSQL.assets/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAWWFQZW5nTGku,size_20,color_FFFFFF,t_70,g_se,x_16.png)
+
+执行计划阶段详解：
+
+| 阶段 | 阶段类型                | 解释                                                         |
+| ---- | ----------------------- | ------------------------------------------------------------ |
+| 1    | Unresolved Logical Plan | 检查 SQL 语法上是否有问题，然后生成 Unresolved（未决断）的逻辑计划， |
+| 2    | Logical Plan            | 通过访问 Spark 中的 Catalog 存储库来解析验证语义、列名、类型、表名等。 |
+| 3    | Optimized Logical Plan  | Catalyst 优化器根据RBO各种规则进行优化。                     |
+| 4    | Physical Plan           | 优化后的逻辑执行计划转化为物理执行计划。                     |
+| 5    | Cost Physical Plan      | 根据合适CBO的Cost（成本模型）将物理执行计划转化为可以执行的代码。 |
+| 6    | RDDS                    | 生成最终执行的RDD。                                          |
+
+
+
+Explain 参数详解：
+
+```
+explain(mode="simple")
+```
+
+| 序号 | 参数类型  | 解释                                                         |
+| ---- | --------- | ------------------------------------------------------------ |
+| 1    | simple    | 只展示物理执行计划。                                         |
+| 2    | extended  | 展示物理执行计划和逻辑执行计划。                             |
+| 3    | codegen   | 展示要 Codegen 生成的可执行 Java 代码。                      |
+| 4    | cost      | 展示优化后的逻辑执行计划以及相关的统计。                     |
+| 5    | formatted | 以分隔的方式输出，它会输出更易读的物理执行计划，并展示每个节点的详细信息。 |
+
+执行计划关键字详解：
+
+| 序号 | 关键字            | 解释                                                         |
+| ---- | ----------------- | ------------------------------------------------------------ |
+| 1    | HashAggregate     | 运算符表示数据聚合，一般 HashAggregate 是成对出现，第一个HashAggregate 是将执行节点本地的数据进行局部聚合，另一个 HashAggregate 是将各个分区的数据进一步进行聚合计算。 |
+| 2    | Exchange          | 代表Shuffle，表示需要在集群上移动数据。很多时候HashAggregate 会以 Exchange 分隔开来。 |
+| 3    | Project           | SQL 中的裁剪操作，就是列选择。如：select name, id…           |
+| 4    | BroadcastHashJoin | 表示通过基于广播方式进行 Hash Join。                         |
+| 5    | LocalTableScan    | 运算符就是全表扫描本地的表。                                 |
+
+##### 执行计划过程详解
+
+执行计划的总体结构是一颗树，每个节点表示一个操作符，这个操作符描述了执行的一些操作（针对物理执行计划为：对哪张表的、哪个字段操作等等）。
+
+###### 生成Unresolved逻辑执行计划
+
+Spark SQL中的Parser组件检查SQL语法上是否有问题，然后生成Unresolved（未决断）的逻辑计划。这也是逻辑执行计划的第一个版本。之所以叫做Unresolved逻辑执行计划，因为SQL语法可能是正确的，但有一些表名或者列名不存在。这一步是不检查表名、不检查列名的。
+
+此外，SparkSQL中有一个名为Catalog的组件，这个组件其实是一个存储库。它里面包含了SparkSQL表信息、DataFrame、以及DataSet的所有信息，如果元数据来自于Hive，它会将MySQL存储的元数据拉入到Catalog组件中。
+
+
+
+###### 生成Analyzed逻辑执行计划
+
+SparkSQL中的Analyzer组件会先分析之前生成的Unresolved逻辑执行计划，并通过访问Spark中的Catalog存储库来进行表名、列名的解析、验证。例如：之前的'UnresolvedRelation [ITEMS]、'UnresolvedRelation [ORDERS]标记为Unresolved的关系，在这个过程会被处理为实际的表和实际的列名。
+
+在这个类似于元数据库的Catalog中，进一步地进行语义分析、验证数据结构、模式（schema）、类型等。如果一切都很顺利，那么该逻辑执行计划会标记为Resolved逻辑执行计划。这个操作是由Spark SQL中的Analyzer组件完成的，它帮助我们从Catalog存储库中解析验证语义、列名、表名等。如果Analyzer组件无法解析表名、列名则会失败。否则，就会生成Resolved逻辑执行计划。
+
+###### 生成Optimized逻辑执行计划
+
+生成了Analyzed逻辑执行计划之后，该逻辑执行计划会传递给Catalyst Optimizer，Catalysts Optimizer是Spark SQL重要的优化器，它根据各种规则（例如：过滤器、聚合）进行优化。它将逻辑操作重新排序以优化逻辑执行计划。例如：
+
+- 在多表关联查询时，它来决定执行顺序
+- 尝试在进行执行Project（投影查询）之前，评估Filter来优化查询等等。
+
+###### 生成物理执行计划
+
+SparkSQL要能够在Spark执行，是必须要生成物理执行计划的。Spark SQL中的Planner组件依据Catalyst Optimizer基于各种策略会生成一个或多个物理执行计划。
+
+Planner组件会基于Cost Model（成本模型）会根据执行时间和资源消耗来预测估计每个物理执行计划，并且选择其中一个作为最终的追加物理执行计划。
+
+###### Codegen
+
+Codegen是可选的，默认spark.sql.codegen.wholeStage为true，是打开的。如果禁用了Codegen，Spark将使用物理执行计划直接开始在每个子节点中运行。Codegen阶段其实就是对物理执行计划进一步地进行优化。它将多个物理运算符（或者是在物理执行计划树中支持codegen的子树）融合到一个Java函数中，这个过程称之为Whole-Stage Java Code Generation。
+
+
+
+##### 小结
+
+**Spark SQL在Spark集群中是如何执行的？**
+
+Spark SQL会经过以下过程，
+
+- Parser组件将SQL转换为Unresolved逻辑执行计划
+- Analyzer组件通过获取Catalog存储库将Unresolved逻辑执行计划处理为Resolved逻辑执行计划
+- Catalyst Optimizer组件，将Resolved逻辑执行计划转换为Optimized逻辑执行计划
+- Planner组件将Optimized逻辑执行计划转换为物理执行计划
+- Planner组件对上一步的物理执行计划进行评估，选择出最终的物理执行计划
+- Code Generation对物理执行计划进一步优化，将一些操作串联在一起
+- 生成Job（DAG）由scheduler调度到spark executors中执行
+
+**Unresolved执行计划和Resolved执行计划的区别什么？**
+
+Unresolved执行计划对SQL语法解析，而Resolved执行计划会从Catalog中拉取元数据，解析表名和列名。
+
+**逻辑执行计划和物理执行计划的区别？**
+
+逻辑执行计划只是对SQL语句中以什么样的执行顺序做一个整体描述，而物理执行计划中包含了具体要进行什么的操作。例如：是BroadcastJoin、还是SortMergeJoin等等。
+
+**Spark SQL是如何对SQL进行优化的？**
+
+由Catalyst Optimizer组件根据一系列规则对SQL进行优化，是对逻辑执行计划进行优化。例如：我们常听说的谓词下推就是其中一个规则。
+
+**Spark SQL中的Codegen是个什么组件？**
+
+用来将一些非shuffle的操作整合到一个whole-stage中，Spark SQL会针对这些操作生成Java代码放在executor中执行。
 
 -----
 
