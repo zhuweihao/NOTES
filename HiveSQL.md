@@ -1253,11 +1253,9 @@ Spark SQL中的Parser组件检查SQL语法上是否有问题，然后生成Unres
 
 此外，SparkSQL中有一个名为Catalog的组件，这个组件其实是一个存储库。它里面包含了SparkSQL表信息、DataFrame、以及DataSet的所有信息，如果元数据来自于Hive，它会将MySQL存储的元数据拉入到Catalog组件中。
 
-
-
 ###### 生成Analyzed逻辑执行计划
 
-SparkSQL中的Analyzer组件会先分析之前生成的Unresolved逻辑执行计划，并通过访问Spark中的Catalog存储库来进行表名、列名的解析、验证。例如：之前的'UnresolvedRelation [ITEMS]、'UnresolvedRelation [ORDERS]标记为Unresolved的关系，在这个过程会被处理为实际的表和实际的列名。
+SparkSQL中的Analyzer组件会先分析之前生成的Unresolved逻辑执行计划，并通过访问Spark中的Catalog存储库来进行表名、列名的解析、验证。例如：之前的'UnresolvedRelation [ITEMS]、'UnresolvedRelation [ORDERS]‘标记为Unresolved的关系，在这个过程会被处理为实际的表和实际的列名。
 
 在这个类似于元数据库的Catalog中，进一步地进行语义分析、验证数据结构、模式（schema）、类型等。如果一切都很顺利，那么该逻辑执行计划会标记为Resolved逻辑执行计划。这个操作是由Spark SQL中的Analyzer组件完成的，它帮助我们从Catalog存储库中解析验证语义、列名、表名等。如果Analyzer组件无法解析表名、列名则会失败。否则，就会生成Resolved逻辑执行计划。
 
@@ -1900,10 +1898,134 @@ spark中的分桶
 
 ### 压缩参数配置
 
+要在 Hadoop 中启用压缩，可以配置如下参数（mapred-site.xml 文件中）：
+
+| 参数                                                   | 默认值                                                       | 阶段         | 备注                                              |
+| ------------------------------------------------------ | ------------------------------------------------------------ | ------------ | ------------------------------------------------- |
+| io.compression.codecs<br />（在 core-site.xml 中配置） | org.apache.hadoop.io.compress.DefaultCodec,  org.apache.hadoop.io.compress.GzipCodec,  org.apache.hadoop.io.compress.BZip2Codec, org.apache.hadoop.io.compress.Lz4Codec | 输入压缩     | Hadoop 使用文件扩展 名判断是否支持某种 编解码器   |
+| mapreduce.map.output.com press                         | false                                                        | mapper 输出  | 这个参数设为 true 启 用压缩                       |
+| mapreduce.map.output.com press.codec                   | org.apache.hadoop.io.compress.DefaultCodec                   | mapper 输出  | 使用 LZO、LZ4 或 snappy 编解码器在此 阶段压缩数据 |
+| mapreduce.output.fileoutput format.compress            | false                                                        | reducer 输出 | 这个参数设为 true 启 用压缩                       |
+| mapreduce.output.fileoutput format.compress.codec      | org.apache.hadoop.io.compress. DefaultCodec                  | reducer 输出 | 使用标准工具或者编 解码器，如 gzip 和 bzip2       |
+| mapreduce.output.fileoutput format.compress.type       | RECORD                                                       | reducer 输出 | SequenceFile 输出使用 的压缩类型：NONE 和 BLOCK   |
 
 
 
->>>>>>> 0f7045f8549d24c77ff50faf5721d8f042e73b81
+## 开启 Map 输出阶段压缩（MR 引擎）
+
+开启 map 输出阶段压缩可以减少 job 中 map 和 Reduce task 间数据传输量。具体配置如下：
+
+案例实操： 
+
+开启 hive 中间传输数据压缩功能 
+
+```hive
+hive (default)>set hive.exec.compress.intermediate=true;
+```
+
+ 开启 mapreduce 中 map 输出压缩功能
+
+```hive
+hive (default)>set mapreduce.map.output.compress=true;
+```
+
+ 设置 mapreduce 中 map 输出数据的压缩方式
+
+```hive
+hive (default)>set mapreduce.map.output.compress.codec=org.apache.hadoop.io.compress.SnappyCodec;
+```
+
+执行查询语句 
+
+```hive
+hive (default)> select count(ename) name from emp;
+```
+
+
+
+## 开启 Reduce 输出阶段压缩
+
+当 Hive 将输出写入到表中时，输出内容同样可以进行压缩。属性 hive.exec.compress.output控制着这个功能。用户可能需要保持默认设置文件中的默认值false， 这样默认的输出就是非压缩的纯文本文件了。用户可以通过在查询语句或执行脚本中设置这个值为 true，来开启输出结果压缩功能。 
+
+案例实操： 
+
+开启 hive 最终输出数据压缩功能 
+
+```hive
+set hive.exec.compress.output=true;
+```
+
+开启 mapreduce 最终输出数据压缩 
+
+```hive
+set mapreduce.output.fileoutputformat.compress=true; 
+```
+
+设置 mapreduce 最终数据输出压缩方式 
+
+```hive
+set mapreduce.output.fileoutputformat.compress.codec=org.apache.hadoop.io.compress.SnappyCodec; 
+```
+
+设置 mapreduce 最终数据输出压缩为块压缩 
+
+```hive
+set mapreduce.output.fileoutputformat.compress.type=BLOCK;
+```
+
+测试一下输出结果是否是压缩文件 
+
+```hive
+insert overwrite local directory '/home/zhuweihao/opt/data/distribute-result' select * from emp distribute by deptno sort by empno desc;
+```
+
+## 文件存储格式
+
+Hive 支持的存储数据的格式主要有：TEXTFILE 、SEQUENCEFILE、ORC、PARQUET。
+
+### 行式存储和列式存储
+
+![image-20220918145637260](HiveSQL.assets/image-20220918145637260.png)
+
+如图所示左边为逻辑表，右边第一个为行式存储，第二个为列式存储。
+
+- 行存储的特点：查询满足条件的一整行数据的时候，列存储则需要去每个聚集的字段找到对应的每个列的值，行存储只需要找到其中一个值，其余的值都在相邻地方，所以此时行存储查询的速度更快。
+
+- 列存储的特点：因为每个字段的数据聚集存储，在查询只需要少数几个字段的时候，能大大减少读取的数据量；每个字段的数据类型一定是相同的，列式存储可以针对性的设计更好的设计压缩算法。
+
+TEXTFILE 和 SEQUENCEFILE 的存储格式都是基于行存储的； ORC 和 PARQUET 是基于列式存储的。
+
+### TextFile 格式
+
+默认格式，数据不做压缩，磁盘开销大，数据解析开销大。可结合 Gzip、Bzip2 使用， 但使用 Gzip 这种方式，hive 不会对数据进行切分，从而无法对数据进行并行操作。
+
+### Orc 格式
+
+Orc (Optimized Row Columnar)是 Hive 0.11 版里引入的新的存储格式。 
+
+如下图所示可以看到每个 Orc 文件由 1 个或多个 stripe 组成，每个 stripe 一般为 HDFS 的块大小，每一个 stripe 包含多条记录，这些记录按照列进行独立存储，对应到 Parquet 中的 row group 的概念。每个 Stripe 里有三部分组成，分别是 Index Data，Row Data，Stripe  Footer
+
+![image-20220918150105308](HiveSQL.assets/image-20220918150105308.png)
+
+- Index Data：一个轻量级的 index，默认是每隔 1W 行做一个索引。这里做的索引应该只是记录某行的各字段在 Row Data 中的 offset。 
+- Row Data：存的是具体的数据，先取部分行，然后对这些行按列进行存储。对每个 列进行了编码，分成多个 Stream 来存储。 
+- Stripe Footer：存的是各个Stream的类型，长度等信息。 
+
+每个文件有一个File Footer，这里面存的是每个Stripe的行数，每个 Column 的数据类型信息等；每个文件的尾部是一个PostScript，这里面记录了整个文件的压缩类型以及 FileFooter 的长度信息等。在读取文件时，会seek到文件尾部读PostScript，从里面解析到File Footer长度，再读FileFooter，从里面解析到各个Stripe信息，再读各个Stripe，即从后往前读。
+
+### Parquet 格式
+
+Parquet 文件是以二进制方式存储的，所以是不可以直接读取的，文件中包括该文件的数据和元数据，因此 Parquet 格式文件是自解析的。 
+
+- 行组(Row Group)：每一个行组包含一定的行数，在一个 HDFS 文件中至少存储一 个行组，类似于 orc 的 stripe 的概念。 
+- 列块(Column Chunk)：在一个行组中每一列保存在一个列块中，行组中的所有列连 续的存储在这个行组文件中。一个列块中的值都是相同类型的，不同的列块可能使用不同的 算法进行压缩。 
+- 页(Page)：每一个列块划分为多个页，一个页是最小的编码的单位，在同一个列块的不同页可能使用不同的编码方式。 通常情况下，在存储Parquet数据的时候会按照Block大小设置行组的大小，由于一般情况下每一个Mapper任务处理数据的最小单位是一个 Block，这样可以把每一个行组由一 个Mapper任务处理，增大任务执行并行度。Parquet文件的格式。
+
+![image-20220918151035919](HiveSQL.assets/image-20220918151035919.png)
+
+上图展示了一个 Parquet 文件的内容，一个文件中可以存储多个行组，文件的首位都是 该文件的 Magic Code，用于校验它是否是一个 Parquet 文件，Footer length 记录了文件元数据的大小，通过该值和文件长度可以计算出元数据的偏移量，文件的元数据中包括每一个行 组的元数据信息和该文件存储数据的 Schema 信息。除了文件中每一个行组的元数据，每一 页的开始都会存储该页的元数据，在 Parquet 中，有三种类型的页：数据页、字典页和索引 页。数据页用于存储当前行组中该列的值，字典页存储该列值的编码字典，每一个列块中最 多包含一个字典页，索引页用来存储当前行组下该列的索引，目前 Parquet 中还不支持索引页。
+
+
 
 
 
