@@ -1,3 +1,7 @@
+# [Home - Apache Hive - Apache Software Foundation](https://cwiki.apache.org/confluence/display/Hive/Home)
+
+
+
 # Hive数据类型
 
 ## 基本数据类型
@@ -2008,22 +2012,332 @@ Orc (Optimized Row Columnar)是 Hive 0.11 版里引入的新的存储格式。
 ![image-20220918150105308](HiveSQL.assets/image-20220918150105308.png)
 
 - Index Data：一个轻量级的 index，默认是每隔 1W 行做一个索引。这里做的索引应该只是记录某行的各字段在 Row Data 中的 offset。 
-- Row Data：存的是具体的数据，先取部分行，然后对这些行按列进行存储。对每个 列进行了编码，分成多个 Stream 来存储。 
+- Row Data：存的是具体的数据，先取部分行，然后对这些行按列进行存储。对每个列进行了编码，分成多个 Stream 来存储。 
 - Stripe Footer：存的是各个Stream的类型，长度等信息。 
 
 每个文件有一个File Footer，这里面存的是每个Stripe的行数，每个 Column 的数据类型信息等；每个文件的尾部是一个PostScript，这里面记录了整个文件的压缩类型以及 FileFooter 的长度信息等。在读取文件时，会seek到文件尾部读PostScript，从里面解析到File Footer长度，再读FileFooter，从里面解析到各个Stripe信息，再读各个Stripe，即从后往前读。
 
 ### Parquet 格式
 
-Parquet 文件是以二进制方式存储的，所以是不可以直接读取的，文件中包括该文件的数据和元数据，因此 Parquet 格式文件是自解析的。 
+Parquet文件是以二进制方式存储的，所以是不可以直接读取的，文件中包括该文件的数据和元数据，因此 Parquet 格式文件是自解析的。 
 
 - 行组(Row Group)：每一个行组包含一定的行数，在一个 HDFS 文件中至少存储一 个行组，类似于 orc 的 stripe 的概念。 
-- 列块(Column Chunk)：在一个行组中每一列保存在一个列块中，行组中的所有列连 续的存储在这个行组文件中。一个列块中的值都是相同类型的，不同的列块可能使用不同的 算法进行压缩。 
+- 列块(Column Chunk)：在一个行组中每一列保存在一个列块中，行组中的所有列连续的存储在这个行组文件中。一个列块中的值都是相同类型的，不同的列块可能使用不同的算法进行压缩。 
 - 页(Page)：每一个列块划分为多个页，一个页是最小的编码的单位，在同一个列块的不同页可能使用不同的编码方式。 通常情况下，在存储Parquet数据的时候会按照Block大小设置行组的大小，由于一般情况下每一个Mapper任务处理数据的最小单位是一个 Block，这样可以把每一个行组由一 个Mapper任务处理，增大任务执行并行度。Parquet文件的格式。
 
 ![image-20220918151035919](HiveSQL.assets/image-20220918151035919.png)
 
-上图展示了一个 Parquet 文件的内容，一个文件中可以存储多个行组，文件的首位都是 该文件的 Magic Code，用于校验它是否是一个 Parquet 文件，Footer length 记录了文件元数据的大小，通过该值和文件长度可以计算出元数据的偏移量，文件的元数据中包括每一个行 组的元数据信息和该文件存储数据的 Schema 信息。除了文件中每一个行组的元数据，每一 页的开始都会存储该页的元数据，在 Parquet 中，有三种类型的页：数据页、字典页和索引 页。数据页用于存储当前行组中该列的值，字典页存储该列值的编码字典，每一个列块中最 多包含一个字典页，索引页用来存储当前行组下该列的索引，目前 Parquet 中还不支持索引页。
+上图展示了一个 Parquet 文件的内容，一个文件中可以存储多个行组，文件的首位都是该文件的 Magic Code，用于校验它是否是一个Parquet 文件，Footer length 记录了文件元数据的大小，通过该值和文件长度可以计算出元数据的偏移量，文件的元数据中包括每一个行组的元数据信息和该文件存储数据的 Schema 信息。除了文件中每一个行组的元数据，每一 页的开始都会存储该页的元数据，在Parquet 中，有三种类型的页：数据页、字典页和索引页。数据页用于存储当前行组中该列的值，字典页存储该列值的编码字典，每一个列块中最多包含一个字典页，索引页用来存储当前行组下该列的索引，目前 Parquet 中还不支持索引页。
+
+### 主流文件存储格式对比实验
+
+从存储文件的压缩比和查询速度两个角度对比。
+
+
+
+####  存储文件的压缩比测试：
+
+##### Textfile
+
+创建表，存储数据格式为 
+
+```hive
+create table log_text (
+track_time string,
+url string,
+session_id string,
+referer string,
+ip string,
+end_user_id string,
+city_id string
+)
+row format delimited fields terminated by '\t'
+stored as textfile;
+```
+
+向表中加载数据 
+
+```hive
+load data local inpath '/home/zhuweihao/opt/data/log.data' into table log_text;
+```
+
+查看表中数据大小 
+
+```hive
+dfs -du -h /user/hive/warehouse/log_text;
+```
+
+![image-20220919143957208](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919143957208.png)
+
+##### ORC
+
+创建表，存储数据格式为 ORC
+
+```HIVE
+create table log_orc(
+track_time string,
+url string,
+session_id string,
+referer string,
+ip string,
+end_user_id string,
+city_id string
+)
+row format delimited fields terminated by '\t'
+stored as orc
+tblproperties("orc.compress"="NONE"); -- 设置 orc 存储不使用压缩
+```
+
+向表中加载数据
+
+```HIVE
+insert into table log_orc select * from log_text;
+```
+
+查看表中数据大小
+
+```
+dfs -du -h /user/hive/warehouse/log_orc/;
+```
+
+![image-20220919144523803](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919144523803.png)
+
+##### Parquet
+
+创建表，存储数据格式为 parquet
+
+```
+create table log_parquet(
+track_time string,
+url string,
+session_id string,
+referer string,
+ip string,
+end_user_id string,
+city_id string
+)
+row format delimited fields terminated by '\t'
+stored as parquet;
+```
+
+向表中加载数据
+
+```hive
+insert into table log_parquet select * from log_text;
+```
+
+查看表中数据大小
+
+```
+dfs -du -h /user/hive/warehouse/log_parquet/;
+```
+
+![image-20220919145146446](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919145146446.png)
+
+对比结果：orc>parquet>textfile
+
+#### 存储文件的查询速度测试：
+
+textfile
+
+```hive
+insert overwrite local directory '/home/zhuweihao/opt/data/log_text' select substring(url,1,4) from log_text;
+```
+
+![image-20220919151140513](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919151140513.png)
+
+orc
+
+```hive
+insert overwrite local directory '/home/zhuweihao/opt/data/log_orc' select substring(url,1,4) from log_orc;
+```
+
+![image-20220919151234719](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919151234719.png)
+
+parquet
+
+```hive
+insert overwrite local directory '/home/zhuweihao/opt/data/log_parquet' select substring(url,1,4) from log_parquet;
+```
+
+![image-20220919151351649](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919151351649.png)
+
+## 存储和压缩结合
+
+#### 创建一个 ZLIB 压缩的 ORC 存储方式
+
+```HIVE
+create table log_orc_zlib(
+track_time string,
+url string,
+session_id string,
+referer string,
+ip string,
+end_user_id string,
+city_id string
+)
+row format delimited fields terminated by '\t'
+stored as orc
+tblproperties("orc.compress"="ZLIB");
+```
+
+注意：所有关于 ORCFile 的参数都是在 HQL 语句的 TBLPROPERTIES 字段里面出现
+
+插入数据
+
+```hive
+insert into log_orc_zlib select * from log_text;
+```
+
+查看插入后数据
+
+```
+dfs -du -h /user/hive/warehouse/log_orc_zlib;
+```
+
+![image-20220919153046097](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919153046097.png)
+
+
+
+#### 创建一个 SNAPPY 压缩的 ORC 存储方式
+
+建表
+
+```hive
+create table log_orc_snappy(
+track_time string,
+url string,
+session_id string,
+referer string,
+ip string,
+end_user_id string,
+city_id string
+)
+row format delimited fields terminated by '\t'
+stored as orc
+tblproperties("orc.compress"="SNAPPY");
+```
+
+插入数据
+
+```hive
+insert into log_orc_snappy select * from log_text;
+```
+
+查看插入后数据
+
+```
+dfs -du -h /user/hive/warehouse/log_orc_snappy;
+```
+
+![image-20220919153444175](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919153444175.png)
+
+#### 创建一个 SNAPPY 压缩的 parquet 存储方式
+
+建表
+
+```hive
+create table log_parquet_snappy(
+track_time string,
+url string,
+session_id string,
+referer string,
+ip string,
+end_user_id string,
+city_id string
+)
+row format delimited fields terminated by '\t'
+stored as parquet
+tblproperties("parquet.compression"="SNAPPY");
+```
+
+插入数据
+
+```hive
+insert into log_parquet_snappy select * from log_text;
+```
+
+查看大小
+
+```
+dfs -du -h /user/hive/warehouse/log_parquet_snappy/;
+```
+
+![image-20220919153902728](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919153902728.png)
+
+在实际的项目开发当中，hive 表的数据存储格式一般选择：orc 或 parquet。压缩方式一 般选择 snappy，lzo。
+
+
+
+## 小结
+
+### 对于 Hive表文件存储方式的一些建议
+
+目前针对存储格式的选择上，主要由TEXTFILE、ORC、Parquet等数据格式。
+
+### Hive中 TEXTFILE 文件存储格式使用场景
+
+TEXTFILE主要使用场景在数据贴源层 ODS 或 STG 层，针对需要使用脚本load加载数据到Hive数仓表中的情况。
+
+> 数据仓库的三层架构
+>
+> (1)业务数据层：包含 STG(数据缓冲层)与 ODS(操作数据层)两层，这两层数据结构与业务数据几乎一致。
+>
+> STG：也叫数据准备区，定位是缓存来自 DB 抽取、消息、日志解析落地的临时数据，结构与业务系统保持一致；负责对垃圾数据、不规范数据进行清洗转换；该层只为 ODS 层服务；
+>
+> ODS：操作数据层定位于业务明细数据保留区，负责保留数据接入时点后历史变更数据，数据原则上全量保留。模型设计依据业务表数据变更特性采取拉链、流水表两种形式。
+>
+> (2)公共数据层：细分为 DWD(明细数据层)、DWS(汇总数据层)、DIM(公共维度层) 三层，主要用于加工存放整合后的明细业务过程数据，以及经过轻度或重度汇总粒度公共维度指标数据。公共数据层作为仓库核心层，定位于业务视角，提炼出对数据仓库具有共性的数据访问、统计需求，从而构建面向支持应用、提供共享数据访问服务的公共数据。
+>
+> DWD：这一层是整合后的业务过程明细数据，负责各业务场景垂直与水平数据整合、常用公共维度冗余加工，以及明细业务标签信息加工；
+>
+> DWS：汇总数据层按照主题对共性维度指标数据进行轻度、高度聚合；
+>
+> DIM：对维度进行统一标准化定义，实现维度信息共享。
+>
+> (3)应用数据层：DWA 层，主要用于各产品或各业务条线个性化的数据加工，例如商业化产品数据、搜索推荐，风控等。
+
+### Hive中 Parquet 文件存储格式使用场景
+
+Parquet 主要使用场景在Impala和Hive共享数据和元数据的场景。
+
+> Impala是基于Hive的大数据实时分析查询引擎，直接使用Hive的元数据库Metadata，意味着impala元数据都存储在Hive的metastore中。并且impala兼容Hive的sql解析，实现了Hive的SQL语义的子集，功能还在不断的完善中。
+>
+> Impala 与Hive都是构建在Hadoop之上的数据查询工具各有不同的侧重适应面，但从客户端使用来看Impala与Hive有很多的共同之处，如数据表元数 据、ODBC/JDBC驱动、SQL语法、灵活的文件格式、存储资源池等。
+>
+> **Hive适合于长时间的批处理查询分析**，**而Impala适合于实时交互式SQL查询**，Impala给数据分析人员提供了快速实验、验证想法的大数 据分析工具。可以先使用hive进行数据转换处理，之后使用Impala在Hive处理后的结果数据集上进行快速的数据分析。
+>
+> 参考博客：[Impala和Hive的区别 - Denghejing - 博客园 (cnblogs.com)](https://www.cnblogs.com/Denghejing/p/15797905.html)
+
+Parquet的核心思想是使用“record shredding and assembly algorithm”来表示复杂的嵌套数据类型，同时辅以按列的高效压缩和编码技术，实现降低存储空间，提高IO效率，降低上层应用延迟。Parquet是语言无关的，而且不与任何一种数据处理框架绑定在一起，适配多种语言和组件。
+
+能够与Parquet配合的组件有：
+
+| 组件类型 | 组件                                  |
+| :------- | :------------------------------------ |
+| 查询引擎 | Hive、Impala、Pig                     |
+| 计算框架 | MapReduce、Spark、Cascading           |
+| 数据模型 | Avro、Thrift、Protocol Buffers、POJOs |
+
+### Hive中 ORC 文件存储格式使用场景
+
+ORC文件格式可以提供一种高效的方法来存储Hive数据，运用ORC可以提高Hive的读、写以及处理数据的性能，但如果有以下两种场景可以考虑不使用ORC，文本文件加载到ORC格式的Hive表的场景及Hive表作为计算结果数据。
+
+文本文件加载到ORC格式的Hive表的场景：由于文本格式到ORC，需要耗费较高的CPU计算资源，相比于直接落地成文本格式Hive表而言加载性能会低很多；
+
+Hive表作为计算结果数据，导出给Hadoop之外的外部系统读取使用的场景：ORC格式的结果数据，相比于文本格式的结果数据而言其易读性低很多。
+
+除此之外，其他场景均建议使用ORC作为Hive表的存储格式。
+
+------
+
+实际工作中对于Hive存储格式和压缩方式的使用需要根据场景和需求来定，如果是数据源的话，采用TEXTfile的方式，这样可以很大程度上节省磁盘空间；
+
+而在计算的过程中，为了不影响执行的速度，可以浪费一点磁盘空间，建议采用RCFile+snappy的方式，这样可以整体提升hive的执行速度。针对很多文章中说的lzo的方式，也可以在计算过程中使用，只不过综合考虑（速度和压缩比）的话还是建议snappy。
+
+最后稍作总结，在实际的项目开发当中，hive表的数据存储格式一般选择：orc或parquet。压缩方式一般选择snappy。
+
+但如果文件过大的情况下，使用ORC+SNAPPY会有性能瓶颈
 
 
 
