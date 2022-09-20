@@ -2067,7 +2067,7 @@ load data local inpath '/home/zhuweihao/opt/data/log.data' into table log_text;
 dfs -du -h /user/hive/warehouse/log_text;
 ```
 
-![image-20220919143957208](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919143957208.png)
+![image-20220919143957208](HiveSQL.assets/image-20220919143957208.png)
 
 ##### ORC
 
@@ -2100,7 +2100,7 @@ insert into table log_orc select * from log_text;
 dfs -du -h /user/hive/warehouse/log_orc/;
 ```
 
-![image-20220919144523803](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919144523803.png)
+![image-20220919144523803](HiveSQL.assets/image-20220919144523803.png)
 
 ##### Parquet
 
@@ -2132,7 +2132,7 @@ insert into table log_parquet select * from log_text;
 dfs -du -h /user/hive/warehouse/log_parquet/;
 ```
 
-![image-20220919145146446](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919145146446.png)
+![image-20220919145146446](HiveSQL.assets/image-20220919145146446.png)
 
 对比结果：orc>parquet>textfile
 
@@ -2144,7 +2144,7 @@ textfile
 insert overwrite local directory '/home/zhuweihao/opt/data/log_text' select substring(url,1,4) from log_text;
 ```
 
-![image-20220919151140513](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919151140513.png)
+![image-20220919151140513](HiveSQL.assets/image-20220919151140513.png)
 
 orc
 
@@ -2152,7 +2152,7 @@ orc
 insert overwrite local directory '/home/zhuweihao/opt/data/log_orc' select substring(url,1,4) from log_orc;
 ```
 
-![image-20220919151234719](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919151234719.png)
+![image-20220919151234719](HiveSQL.assets/image-20220919151234719.png)
 
 parquet
 
@@ -2160,7 +2160,7 @@ parquet
 insert overwrite local directory '/home/zhuweihao/opt/data/log_parquet' select substring(url,1,4) from log_parquet;
 ```
 
-![image-20220919151351649](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919151351649.png)
+![image-20220919151351649](HiveSQL.assets/image-20220919151351649.png)
 
 ## 存储和压缩结合
 
@@ -2195,7 +2195,7 @@ insert into log_orc_zlib select * from log_text;
 dfs -du -h /user/hive/warehouse/log_orc_zlib;
 ```
 
-![image-20220919153046097](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919153046097.png)
+![image-20220919153046097](HiveSQL.assets/image-20220919153046097.png)
 
 
 
@@ -2230,7 +2230,7 @@ insert into log_orc_snappy select * from log_text;
 dfs -du -h /user/hive/warehouse/log_orc_snappy;
 ```
 
-![image-20220919153444175](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919153444175.png)
+![image-20220919153444175](HiveSQL.assets/image-20220919153444175.png)
 
 #### 创建一个 SNAPPY 压缩的 parquet 存储方式
 
@@ -2263,7 +2263,7 @@ insert into log_parquet_snappy select * from log_text;
 dfs -du -h /user/hive/warehouse/log_parquet_snappy/;
 ```
 
-![image-20220919153902728](C:\Users\ZWH\AppData\Roaming\Typora\typora-user-images\image-20220919153902728.png)
+![image-20220919153902728](HiveSQL.assets/image-20220919153902728.png)
 
 在实际的项目开发当中，hive 表的数据存储格式一般选择：orc 或 parquet。压缩方式一 般选择 snappy，lzo。
 
