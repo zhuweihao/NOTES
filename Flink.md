@@ -219,3 +219,173 @@ Flink与许多常见的日志记录和监视服务集成得很好，并提供了
 - **日志集成服务**:Flink实现了流行的slf4j日志接口，并与日志框架[log4j](https://logging.apache.org/log4j/2.x/)或[logback](https://logback.qos.ch/)集成。
 - **指标服务**: Flink提供了一个复杂的度量系统来收集和报告系统和用户定义的度量指标信息。度量信息可以导出到多个报表组件服务，包括 [JMX](https://en.wikipedia.org/wiki/Java_Management_Extensions), Ganglia, [Graphite](https://graphiteapp.org/), [Prometheus](https://prometheus.io/), [StatsD](https://github.com/etsy/statsd), [Datadog](https://www.datadoghq.com/), 和 [Slf4j](https://www.slf4j.org/).
 - **标准的WEB REST API接口服务**: Flink提供多种REST API接口，有提交新应用程序、获取正在运行的应用程序的Savepoint服务信息、取消应用服务等接口。REST API还提供元数据信息和已采集的运行中或完成后的应用服务的指标信息。
+
+
+
+## WordCount
+
+word.txt
+
+```
+hello world
+hello flink
+hello java
+```
+
+### 批处理
+
+我们进行单词频次统计的基本思路是：先逐行读入文件数据，然后将每一行文字拆分成单词；接着按照单词分组，统计每组数据的个数，就是对应单词的频次。
+
+Flink 同时提供了 Java 和 Scala 两种语言的 API，有些类在两套 API 中名称是一样的。 所以在引入包时，如果有 Java 和 Scala 两种选择，要注意选用 Java 的包。
+
+```java
+public class BatchWordCount {
+    public static void main(String[] args) throws Exception {
+        //创建执行环境
+        ExecutionEnvironment executionEnvironment = ExecutionEnvironment.getExecutionEnvironment();
+        //从文件读取数据，按行读取(存储的元素就是每行的文本)
+        DataSource<String> dataSource = executionEnvironment.readTextFile("Flink/src/main/resources/word.txt");
+        //转换数据格式
+        FlatMapOperator<String, Tuple2<String, Long>> wordAndOne = dataSource
+                .flatMap((String line, Collector<Tuple2<String, Long>> out) -> {
+                    String[] words = line.split(" ");
+                    for (String word : words) {
+                        out.collect(Tuple2.of(word, 1L));
+                    }
+                })
+                //当 Lambda 表达式使用 Java 泛型的时候, 由于泛型擦除的存在, 需要显示的声明类型信息
+                .returns(Types.TUPLE(Types.STRING, Types.LONG));
+        UnsortedGrouping<Tuple2<String, Long>> wordAndOneUG = wordAndOne.groupBy(0);
+        AggregateOperator<Tuple2<String, Long>> sum = wordAndOneUG.sum(1);
+        sum.print();
+    }
+}
+```
+
+![image-20220921094742776](Flink.assets/image-20220921094742776.png)
+
+
+
+需要注意的是，这种代码的实现方式，是基于 DataSet API 的，也就是我们对数据的处理转换，是看作数据集来进行操作的。事实上 Flink 本身是流批统一的处理架构，批量的数据集本质上也是流，没有必要用两套不同的 API 来实现。所以从 Flink 1.12 开始，官方推荐的做法是直接使用 DataStream API，在提交任务时通过将执行模式设为 BATCH 来进行批处理：
+
+```
+bin/flink run -Dexecution.runtime-mode=BATCH BatchWordCount.jar
+```
+
+这样，DataSet API 就已经处于“软弃用”（soft deprecated）的状态，在实际应用中只要维护一套 DataStream API 就可以了。这里只是为了方便理解，依然用 DataSet API 做了批处理的实现。
+
+### 流处理
+
+在 Flink 的视角里，一切数据都可以认为是流，流数据是无界流，而批数据则是有界流。所以批处理，其实就可以看作有界流的处理。 
+
+对于流而言，我们会在获取输入数据后立即处理，这个过程是连续不断的。当然，有时我们的输入数据可能会有尽头，这看起来似乎就成了一个有界流；但是它跟批处理是截然不同的 ——在输入结束之前，我们依然会认为数据是无穷无尽的，处理的模式也仍旧是连续逐个处理。 下面我们就针对不同类型的输入数据源，用具体的代码来实现流处理。
+
+#### 读取文件（有界数据流）
+
+```java
+public class BoundedStreamWordCount {
+    public static void main(String[] args) throws Exception {
+        //创建流式执行环境
+        StreamExecutionEnvironment streamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment();
+        //读取文件
+        DataStream<String> stringDataStream = streamExecutionEnvironment.readTextFile("Flink/src/main/resources/word.txt");
+        //转换数据格式
+        SingleOutputStreamOperator<Tuple2<String, Long>> wordAndOne = stringDataStream
+                .flatMap((String line, Collector<String> words) -> {
+                    Arrays.stream(line.split(" ")).forEach(words::collect);
+                })
+                .returns(Types.STRING)
+                .map(word -> Tuple2.of(word, 1L))
+                .returns(Types.TUPLE(Types.STRING, Types.LONG));
+        //分组
+        KeyedStream<Tuple2<String, Long>, String> wordAndOneKS = wordAndOne.keyBy(t -> t.f0);
+        //求和
+        SingleOutputStreamOperator<Tuple2<String, Long>> sum = wordAndOneKS.sum(1);
+        //打印
+        sum.print();
+        //执行
+        streamExecutionEnvironment.execute();
+    }
+}
+```
+
+主要观察与批处理程序 BatchWordCount 的不同： 
+
+- 创建执行环境的不同，流处理程序使用的是 StreamExecutionEnvironment。
+- 每一步处理转换之后，得到的数据对象类型不同。
+- 分组操作调用的是 keyBy 方法，可以传入一个匿名函数作为键选择器 （KeySelector），指定当前分组的 key 是什么。
+- 代码末尾需要调用 streamExecutionEnvironment 的 execute 方法，开始执行任务。
+
+
+
+![image-20220921095006670](Flink.assets/image-20220921095006670.png)
+
+可以看到，这与批处理的结果是完全不同的。批处理针对每个单词，只会输出一个最终的统计个数；而在流处理的打印结果中，“hello”这个单词每出现一次，都会有一个频次统计数据输出。这就是流处理的特点，数据逐个处理，每来一条数据就会处理输出一次。我们通过 打印结果，可以清晰地看到单词“hello”数量增长的过程。
+
+### 读取文本流（无界数据流）
+
+在实际的生产环境中，真正的数据流其实是无界的，有开始却没有结束，这就要求我们需要保持一个监听事件的状态，持续地处理捕获的数据。 
+
+为了模拟这种场景，我们就不再通过读取文件来获取数据了，而是监听数据发送端主机的指定端口，统计发送来的文本数据中出现过的单词的个数。具体实现上，我们只要对 BoundedStreamWordCount 代码中读取数据的步骤稍做修改，就可以实现对真正无界流的处理。
+
+```java
+public class StreamWordCount {
+    public static void main(String[] args) throws Exception{
+        //创建流式执行环境
+        StreamExecutionEnvironment streamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment();
+        //读取文本流
+        DataStream<String> dataStream = streamExecutionEnvironment.socketTextStream("10.10.11.146", 1234);
+        //转换数据格式
+        SingleOutputStreamOperator<Tuple2<String, Long>> wordAndOne = dataStream
+                .flatMap((String line, Collector<String> words) -> {
+                    Arrays.stream(line.split(" ")).forEach(words::collect);
+                })
+                .returns(Types.STRING)
+                .map(word -> Tuple2.of(word, 1L))
+                .returns(Types.TUPLE(Types.STRING, Types.LONG));
+        //分组
+        KeyedStream<Tuple2<String, Long>, String> wordAndOneKS = wordAndOne.keyBy(t -> t.f0);
+        //求和
+        SingleOutputStreamOperator<Tuple2<String, Long>> sum = wordAndOneKS.sum(1);
+        //打印
+        sum.print();
+        //执行
+        streamExecutionEnvironment.execute();
+    }
+}
+```
+
+注意事项： 
+
+- socket 文本流的读取需要配置两个参数：发送端主机名和端口号。这里代码中指定了主机“10.10.11.146”的 1234 端口作为发送数据的 socket 端口，需要根据测试环境自行配置。
+- 在实际项目应用中，主机名和端口号这类信息往往可以通过配置文件，或者传入程序运行参数的方式来指定。
+- socket文本流数据的发送，可以通过Linux系统自带的netcat工具进行模拟。
+
+在 Linux 环境的主机上，执行下列命令，发送数据进行测试：
+
+```
+nc -lk 1234
+```
+
+![image-20220921095713686](Flink.assets/image-20220921095713686.png)
+
+可以发现，输出的结果与之前读取文件的流处理非常相似。
+
+-----
+
+idea本地调试正常运行，打包运行出错
+
+```
+bin/flink run -m localhost:8081 -c com.zhuweihao.wordCount.BatchWordCount /home/zhuweihao/opt/data/Flink-1.0-SNAPSHOT.jar
+```
+
+```
+bin/flink run -c com.zhuweihao.wordCount.BatchWordCount /home/zhuweihao/opt/data/Flink-1.0-SNAPSHOT.jar
+```
+
+![image-20220921111355559](Flink.assets/image-20220921111355559.png)
+
+
+
+
+
