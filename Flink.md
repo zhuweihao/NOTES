@@ -373,11 +373,302 @@ nc -lk 1234
 
 
 
+# DataStream API
+
+Flink 有非常灵活的分层API设计，其中的核心层就是DataStream/DataSet API。由于新版本已经实现了流批一体，DataSet API将被弃用，官方推荐统一使用DataStream API处理流数据和批数据。
+
+DataStream（数据流）本身是Flink中一个用来表示数据集合的类（Class），我们编写的Flink代码其实就是基于这种数据类型的处理，所以这套核心API就以DataStream命名。对于批处理和流处理，我们都可以用这同一套API来实现。
+
+DataStream在用法上有些类似于常规的Java集合，但又有所不同。我们在代码中往往并不关心集合中具体的数据，而只是用API定义出一连串的操作来处理它们；这就叫作数据流的“转换”（transformations）。
+
+一个Flink程序，其实就是对DataStream的各种转换。具体来说，代码基本上都由以下几部分构成： 
+
+- 获取执行环境（execution environment） 
+- 读取数据源（source） 
+- 定义基于数据的转换操作（transformations） 
+- 定义计算结果的输出位置（sink） 
+- 触发程序执行（execute）
+
+其中，获取环境和触发执行，都可以认为是针对执行环境的操作。接下来从执行环境、数据源（source）、转换操作（transformation）、输出（sink）四大部分，对常用的DataStream  API做基本介绍。
+
+![image-20220927111158621](Flink.assets/image-20220927111158621.png)
+
+## 执行环境（Execution Environment）
+
+Flink 程序可以在各种上下文环境中运行：我们可以在本地 JVM 中执行程序，也可以提交到远程集群上运行。
+
+不同的环境，代码的提交运行的过程会有所不同。这就要求我们在提交作业执行计算时， 首先必须获取当前 Flink 的运行环境，从而建立起与 Flink 框架之间的联系。只有获取了环境上下文信息，才能将具体的任务调度到不同的 TaskManager 执行。
+
+### 创建执行环境
+
+编写 Flink 程序的第一步 ， 就是创建执行环境 。 我们要获取的执行环境 ， 是 StreamExecutionEnvironment 类的对象，这是所有 Flink 程序的基础。在代码中创建执行环境的方式，就是调用这个类的静态方法，具体有以下三种。
+
+#### getExecutionEnvironment
+
+最简单的方式，就是直接调用 getExecutionEnvironment 方法。它会根据当前运行的上下文直接得到正确的结果：如果程序是独立运行的，就返回一个本地执行环境；如果是创建了 jar 包，然后从命令行调用它并提交到集群执行，那么就返回集群的执行环境。也就是说，这个方法会根据当前运行的方式，自行决定该返回什么样的运行环境。
+
+```java
+//创建流式执行环境
+StreamExecutionEnvironment streamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment();
+```
+
+#### createLocalEnvironment
+
+这个方法返回一个本地执行环境。可以在调用时传入一个参数，指定默认的并行度；如果不传入，则默认并行度就是本地的CPU核心数。
+
+```java
+LocalStreamEnvironment localEnvironment = StreamExecutionEnvironment.createLocalEnvironment();
+```
+
+#### createRemoteEnvironment
+
+这个方法返回集群执行环境。需要在调用时指定 JobManager 的主机名和端口号，并指定要在集群中运行的 Jar 包。
+
+```java
+StreamExecutionEnvironment remoteEnv = StreamExecutionEnvironment
+ .createRemoteEnvironment(
+ "host", // JobManager 主机名
+ 1234, // JobManager 进程端口号
+ "path/to/jarFile.jar" // 提交给 JobManager 的 JAR 包
+); 
+```
+
+在获取到程序执行环境后，我们还可以对执行环境进行灵活的设置。比如可以全局设置程序的并行度、禁用算子链，还可以定义程序的时间语义、配置容错机制。
+
+### 执行模式（Execution Mode）
+
+在之前的 Flink 版本中，批处理的执行环境与流处理类似，是调用类 ExecutionEnvironment 的静态方法，返回它的对象：
+
+```java
+// 批处理环境
+ExecutionEnvironment batchEnv = ExecutionEnvironment.getExecutionEnvironment();
+// 流处理环境
+StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+```
+
+基于 ExecutionEnvironment 读入数据创建的数据集合，就是 DataSet；对应的调用的一整 套转换方法，就是 DataSet API。
+
+从 1.12.0 版本起，Flink 实现了 API 上的流批统一。DataStream API 新增了一个重要特性：可以支持不同的“执行模式”（execution mode），通过简单的设置就可以让一段 Flink 程序在流处理和批处理之间切换。
+
+- 流执行模式（STREAMING）：这是DataStream API最经典的模式，一般用于需要持续实时处理的无界数据流。默认情况下，程序使用的就是STREAMING执行模式。
+
+- 批处理模式（BATCH）：专门用于批处理的执行模式，这种模式下，Flink处理作业的方式类似于MapReduce框架，对于不会持续计算的有界数据，我们用这种模式处理会更方便。
+
+  - 配置方式
+
+    - 通过命令行配置，在提交作业时，增加 execution.runtime-mode 参数，指定值为 BATCH。
+
+      ```
+      bin/flink run -Dexecution.runtime-mode=BATCH ...
+      ```
+
+    - 通过代码配置，直接基于执行环境调用setRuntimeMode方法，传入BATCH模式。
+
+      ```java
+      StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+      env.setRuntimeMode(RuntimeExecutionMode.BATCH);
+      ```
+
+  - 用BATCH模式处理批量数据，用STREAMING模式处理流式数据。因为数据有界的时候，直接输出结果会更加高效。
+
+- 自动模式（AUTOMATIC）：在这种模式下，将由程序根据输入数据源是否有界，来自动选择执行模式
+
+### 触发程序执行
+
+有了执行环境，我们就可以构建程序的处理流程了：基于环境读取数据源，进而进行各种转换操作，最后输出结果到外部系统。
+
+需要注意的是，写完输出（sink）操作并不代表程序已经结束。因为当main()方法被调用时，其实只是定义了作业的每个执行操作，然后添加到数据流图中；这时并没有真正处理数据，因为数据可能还没来。Flink 是由事件驱动的，只有等到数据到来，才会触发真正的计算， 这也被称为“延迟执行”或“懒执行”（lazy execution）。
+
+所以我们需要显式地调用执行环境的execute()方法，来触发程序执行。execute()方法将一 直等待作业完成，然后返回一个执行结果（JobExecutionResult）。
+
+```java
+env.execute();
+```
+
+## 源算子（Source）
+
+![image-20220927142648961](Flink.assets/image-20220927142648961.png)
+
+Flink 可以从各种来源获取数据，然后构建 DataStream 进行转换处理。一般将数据的输入来源称为数据源(data source)，而读取数据的算子就是源算子（source operator）。所以，source就是我们整个处理程序的输入端。
+
+Flink 代码中通用的添加source的方式，是调用执行环境的addSource()方法：
+
+```java
+DataStream<String> stream = env.addSource(...);
+```
+
+方法传入一个对象参数，需要实现 SourceFunction 接口；返回 DataStreamSource。这里的 DataStreamSource 类继承自 SingleOutputStreamOperator 类，又进一步继承自 DataStream。所以很明显，读取数据的 source 操作是一个算子，得到的是一个数据流（DataStream）。
+
+这里可能会有些麻烦：传入的参数是一个“源函数”（source function），需要实现 SourceFunction 接口。这是何方神圣，又该怎么实现呢？
+
+自己去实现它显然不会是一件容易的事。好在 Flink 直接提供了很多预实现的接口，此外 还有很多外部连接工具也帮我们实现了对应的 source function，通常情况下足以应对我们的际需求。
+
+### 准备工作
+
+为了更好地理解，我们先构建一个实际应用场景。比如网站的访问操作，可以抽象成一个三元组（用户名，用户访问的 url，用户访问 url 的时间戳），所以在这里，我们可以创建一个类 Event，将用户行为包装成它的一个对象。
+
+| 字段名    | 数据类型 | 说明                  |
+| --------- | -------- | --------------------- |
+| user      | String   | 用户名                |
+| url       | String   | 用户访问的url         |
+| timestamp | Long     | 用户访问的url的时间戳 |
+
+```java
+public class Event {
+    public String user;
+    public String url;
+    public Long timestamp;
+
+    public Event() {
+    }
+
+    public Event(String user, String url, Long timestamp) {
+        this.user = user;
+        this.url = url;
+        this.timestamp = timestamp;
+    }
+
+    @Override
+    public String toString() {
+        return "Event{" +
+                "user='" + user + '\'' +
+                ", url='" + url + '\'' +
+                ", timestamp=" + new Timestamp(timestamp) +
+                '}';
+    }
+}
+```
+
+这里需要注意，我们定义的 Event，有这样几个特点：
+
+- 类是公有的（public）
+- 有一个无参构造方法
+- 所有的属性都是公有的（public）
+- 所有的属性的类型都是可以序列化的
+
+Flink会把这样的类作为一种特殊的POJO数据类型来对待，方便数据的解析和序列化。
+
+### 从集合中读取数据
+
+最简单的读取数据的方式，就是在代码中直接创建一个Java集合，然后调用执行环境的fromCollection方法进行读取。这相当于将数据临时存储到内存中，形成特殊的数据结构后，作为数据源使用，一般用于测试。
+
+```java
+public static void main(String[] args) throws Exception {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    List<Event> events = new ArrayList<>();
+    events.add(new Event("Mary", "./home", 1000L));
+    events.add(new Event("Bob", "./cart", 2000L));
+    DataStreamSource<Event> streamSource = env.fromCollection(events);
+    streamSource.print();
+    env.execute();
+}
+```
+
+我们也可以不构建集合，直接将元素列举出来，调用 fromElements 方法进行读取数据：
+
+```java
+DataStreamSource<Event> eventDataStreamSource = env.fromElements(
+        new Event("Mary", "./home", 1000L),
+        new Event("Bob", "./cart", 2000L)
+);
+```
+
+### 从文件读取数据
+
+真正的实际应用中，自然不会直接将数据写在代码中。通常情况下，我们会从存储介质中获取数据，一个比较常见的方式就是读取日志文件。这也是批处理中最常见的读取方式。
+
+```java
+DataStream<String> stream = env.readTextFile("Flink/src/main/resources/clicks.csv");
+```
+
+说明: 
+
+- 参数可以是目录，也可以是文件；
+- 路径可以是相对路径，也可以是绝对路径； 
+- 相对路径是从系统属性 user.dir 获取路径: idea 下是 project 的根目录, standalone 模式下是集群节点根目录； 
+- 也可以从 hdfs 目录下读取, 使用路径 hdfs://..., 由于 Flink 没有提供 hadoop 相关依赖,  需要 pom 中添加相关依赖
+
+```xml
+<dependency>
+    <groupId>org.apache.hadoop</groupId>
+    <artifactId>hadoop-client</artifactId>
+    <version>3.3.3</version>
+    <scope>${compileMode}</scope>
+</dependency>
+```
+
+### 从Socket读取数据
+
+不论从集合还是文件，我们读取的其实都是有界数据。在流处理的场景中，数据往往是无界的。
+
+ 一个简单的方式，就是我们之前用到的读取 socket 文本流。这种方式由于吞吐量小、稳定性较差，一般也是用于测试。
+
+```java
+//读取文本流
+DataStream<String> dataStream = streamExecutionEnvironment.socketTextStream("10.10.11.146", 1234);
+```
+
+### 从kafka读取数据
+
+Kafka 作为分布式消息传输队列，是一个高吞吐、易于扩展的消息系统。而消息队列的传输方式，恰恰和流处理是完全一致的。所以可以说 Kafka 和 Flink 天生一对，是当前处理流式数据的双子星。在如今的实时流处理应用中，由 Kafka 进行数据的收集和传输，Flink 进行分析计算，这样的架构已经成为众多企业的首选。
+
+![image-20220927165349185](Flink.assets/image-20220927165349185.png)
+
+略微遗憾的是，与 Kafka 的连接比较复杂，Flink 内部并没有提供预实现的方法。所以我们只能采用通用的 addSource 方式、实现一个 SourceFunction。
+
+好在Kafka与Flink确实是非常契合，所以Flink官方提供了连接工具flink-connector-kafka， 直接帮我们实现了一个消费者FlinkKafkaConsumer，它就是用来读取Kafka数据的SourceFunction。
+
+所以想要以Kafka作为数据源获取数据，我们只需要引入Kafka连接器的依赖。Flink官方提供的是一个通用的Kafka连接器，它会自动跟踪最新版本的Kafka客户端。
+
+```xml
+<dependency>
+    <groupId>org.apache.flink</groupId>
+    <artifactId>flink-connector-kafka_${scala.binary.version}</artifactId>
+    <version>${flink.version}</version>
+    <scope>${compileMode}</scope>
+</dependency>
+```
+
+然后调用 env.addSource()，传入 FlinkKafkaConsumer 的对象实例就可以了。
+
+```java
+public class SourceKafkaTest {
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        Properties properties = new Properties();
+        properties.setProperty("bootstrap.servers", "172.22.5.12:9092");
+        properties.setProperty("group.id", "zwh-consumer-group");
+        properties.setProperty("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+        properties.setProperty("value.deserialize", "org.apache.kafka.common.serialization.StringDeserializer");
+        properties.setProperty("auto.offset.reset", "latest");
+        DataStreamSource<String> stream = env.addSource(new FlinkKafkaConsumer<String>(
+                "clicks",
+                new SimpleStringSchema(),
+                properties
+        ));
+        stream.print("Kafka");
+        env.execute();
+    }
+}
+```
+
+创建 FlinkKafkaConsumer 时需要传入三个参数： 
+
+- 第一个参数 topic，定义了从哪些主题中读取数据。可以是一个 topic，也可以是 topic 列表，还可以是匹配所有想要读取的 topic 的正则表达式。当从多个 topic 中读取数据时，Kafka 连接器将会处理所有 topic 的分区，将这些分区的数据放到一条流中去。 
+- 第二个参数是一个 DeserializationSchema 或者 KeyedDeserializationSchema。Kafka 消息被存储为原始的字节数据，所以需要反序列化成 Java 或者 Scala 对象。上面代码中使用的 SimpleStringSchema，是一个内置的 DeserializationSchema，它只是将字节数组简单地反序列化成字符串。DeserializationSchema 和 KeyedDeserializationSchema 是公共接口，所以我们也可以自定义反序列化逻辑。 
+- 第三个参数是一个 Properties 对象，设置了 Kafka 客户端的一些属性。
+
+### 自定义Source
+
+
+
 # 状态编程
 
-Flink 处理机制的核心，就是“有状态的流式计算”。
+Flink处理机制的核心，就是“有状态的流式计算”。
 
-在 Flink 这样的分布式系统中，我们不仅需要定义出状态在任务并行时的处理方式，还需要考虑如何持久化保存、以便发生故障时正确地恢复。这就需要一套完整的管理机制来处理所有的状态。
+在Flink这样的分布式系统中，我们不仅需要定义出状态在任务并行时的处理方式，还需要考虑如何持久化保存、以便发生故障时正确地恢复。这就需要一套完整的管理机制来处理所有的状态。
 
 ## Flink中的状态
 
@@ -1752,7 +2043,7 @@ checkpointConfig.setCheckpointStorage("hdfs://my/checkpoint/dir")
 
 需要注意的是，保存点能够在程序更改的时候依然兼容，前提是状态的拓扑结构和数据类型不变。我们知道保存点中状态都是以算子ID-状态名称这样的 key-value 组织起来的，算子ID可以在代码中直接调用 SingleOutputStreamOperator 的.uid()方法来进行指定：
 
-```
+```java
 DataStream<String> stream = env
  .addSource(new StatefulSource())
  .uid("source-id")
