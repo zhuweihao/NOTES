@@ -446,7 +446,7 @@ ExecutionEnvironment batchEnv = ExecutionEnvironment.getExecutionEnvironment();
 StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 ```
 
-基于 ExecutionEnvironment 读入数据创建的数据集合，就是 DataSet；对应的调用的一整 套转换方法，就是 DataSet API。
+基于 ExecutionEnvironment 读入数据创建的数据集合，就是 DataSet；对应的调用的一整套转换方法，就是 DataSet API。
 
 从 1.12.0 版本起，Flink 实现了 API 上的流批统一。DataStream API 新增了一个重要特性：可以支持不同的“执行模式”（execution mode），通过简单的设置就可以让一段 Flink 程序在流处理和批处理之间切换。
 
@@ -662,6 +662,572 @@ public class SourceKafkaTest {
 
 ### 自定义Source
 
+大多数情况下，前面的数据源已经能够满足需要。但是凡事总有例外，如果遇到特殊情况， 我们想要读取的数据源来自某个外部系统，而 flink 既没有预实现的方法、也没有提供连接器，那就只好自定义实现 SourceFunction 了。
+
+接下来我们创建一个自定义的数据源，实现 SourceFunction 接口。主要重写两个关键方法： run()和 cancel()。 
+
+- run()方法：使用运行时上下文对象（SourceContext）向下游发送数据； 
+- cancel()方法：通过标识位控制退出循环，来达到中断数据源的效果。
+
+```java
+public class ClickSource implements SourceFunction<Event> {
+    // 声明一个布尔变量，作为控制数据生成的标识位
+    private Boolean running = true;
+    @Override
+    public void run(SourceContext<Event> ctx) throws Exception {
+        Random random = new Random();    // 在指定的数据集中随机选取数据
+        String[] users = {"Mary", "Alice", "Bob", "Cary"};
+        String[] urls = {"./home", "./cart", "./fav", "./prod?id=1", "./prod?id=2"};
+
+        while (running) {
+            ctx.collect(new Event(
+                    users[random.nextInt(users.length)],
+                    urls[random.nextInt(urls.length)],
+                    Calendar.getInstance().getTimeInMillis()
+            ));
+            // 隔1秒生成一个点击事件，方便观测
+            Thread.sleep(1000);
+        }
+    }
+    @Override
+    public void cancel() {
+        running = false;
+    }
+
+}
+```
+
+这里要注意的是 SourceFunction 接口定义的数据源，并行度只能设置为 1，如果数据源设置为大于 1 的并行度，则会抛出异常。
+
+如果想要自定义并行的数据源的话，需要使用 ParallelSourceFunction
+
+```java
+public class ParallelSourceExample {
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.addSource(new CustomSource()).setParallelism(2).print();
+        env.execute();
+    }
+
+    public static class CustomSource implements ParallelSourceFunction<Integer> {
+
+        private boolean running = true;
+        private Random random = new Random();
+
+        @Override
+        public void run(SourceContext<Integer> ctx) throws Exception {
+            while (running) {
+                ctx.collect(random.nextInt());
+            }
+        }
+
+        @Override
+        public void cancel() {
+            running = false;
+        }
+    }
+```
+
+### Flink支持的数据类型
+
+#### Flink的类型系统
+
+Flink作为一个分布式处理框架，处理的是以数据对象作为元素的流。要分布式地处理这些数据，就不可避免地要面对数据的网络传输、状态的落盘和故障恢复等问题，这就需要对数据进行序列化和反序列化。简单数据是容易序列化的；而复杂类型数据想要序列化之后传输， 就需要将它拆解、清晰地知道其中每一个零件的类型。
+
+为了方便地处理数据，Flink有自己一整套类型系统。Flink使用“类型信息”（TypeInformation）来统一表示数据类型。TypeInformation类是Flink中所有类型描述符的基类。它涵盖了类型的一些基本属性，并为每个数据类型生成特定的序列化器、反序列化器和比较器。
+
+#### Flink支持的数据类型
+
+对于常见的 Java 和 Scala 数据类型，Flink 都是支持的。Flink 在内部，Flink 对支持不同的类型进行了划分，这些类型可以在 Types 工具类中找到：
+
+（1）基本类型
+
+所有 Java 基本类型及其包装类，再加上 Void、String、Date、BigDecimal 和 BigInteger。
+
+（2）数组类型
+
+包括基本类型数组（PRIMITIVE_ARRAY）和对象数组(OBJECT_ARRAY)
+
+（3）复合数据类型
+
+- Java 元组类型（TUPLE）：这是 Flink 内置的元组类型，是 Java API 的一部分。最多 25 个字段，也就是从 Tuple0~Tuple25，不支持空字段
+- Scala 样例类及 Scala 元组：不支持空字段
+- 行类型（ROW）：可以认为是具有任意个字段的元组,并支持空字段
+- POJO：Flink 自定义的类似于 Java bean 模式的类
+
+（4）辅助类型
+
+Option、Either、List、Map 等
+
+（5）泛型类型（GENERIC）
+
+Flink 支持所有的 Java 类和 Scala 类。不过如果没有按照上面 POJO 类型的要求来定义， 就会被 Flink 当作泛型类来处理。Flink 会把泛型类型当作黑盒，无法获取它们内部的属性；它们也不是由 Flink 本身序列化的，而是由 Kryo 序列化的。
+
+------
+
+在这些类型中，元组类型和 POJO 类型最为灵活，因为它们支持创建复杂类型。而相比之下，POJO 还支持在键（key）的定义中直接使用字段名，这会让我们的代码可读性大大增加。 所以，在项目实践中，往往会将流处理程序中的元素类型定为 Flink 的 POJO 类型。
+
+Flink 对 POJO 类型的要求如下：
+
+- 类是公共的（public）和独立的（standalone，也就是说没有非静态的内部类）； 
+- 类有一个公共的无参构造方法； 
+- 类中的所有字段是 public 且非 final 的；或者有一个公共的 getter 和 setter 方法，这些方法需要符合 Java bean 的命名规范
+
+#### 类型提示（Type Hints）
+
+Flink 还具有一个类型提取系统，可以分析函数的输入和返回类型，自动获取类型信息， 从而获得对应的序列化器和反序列化器。但是，由于 Java 中泛型擦除的存在，在某些特殊情况下（比如 Lambda 表达式中），自动提取的信息是不够精细的，这时就需要显式地提供类型信息，才能使应用程序正常工作或提高其性能。
+
+为了解决这类问题，Java API 提供了专门的“类型提示”（type hints）。
+
+word count 流处理程序，我们在将 String 类型的每个词转换成（word， count）二元组后，就明确地用 returns 指定了返回的类型。因为对于map里传入的Lambda表达式，系统只能推断出返回的是Tuple2类型，而无法得到Tuple2。只有显式地告诉系统当前的返回类型，才能正确地解析出完整数据。
+
+```java
+.map(word -> Tuple2.of(word, 1L))
+.returns(Types.TUPLE(Types.STRING, Types.LONG));
+```
+
+这是一种比较简单的场景，二元组的两个元素都是基本数据类型。那如果元组中的一个元素又有泛型，该怎么处理呢？ Flink专门提供了TypeHint类，它可以捕获泛型的类型信息，并且一直记录下来，为运行时提供足够的信息。我们同样可以通过.returns()方法，明确地指定转换之后的 DataStream 里元素的类型。
+
+```java
+returns(new TypeHint<Tuple2<Integer, SomeType>>(){})
+```
+
+## 转换算子（Transformation）
+
+数据源读入数据之后，我们就可以使用各种转换算子，将一个或多个 DataStream 转换为新的 DataStream。一个 Flink 程序的核心，其实就是所有的转换操作，它们决定了处理的业务逻辑。
+
+我们可以针对一条流进行转换处理，也可以进行分流、合流等多流转换操作，从而组合成 复杂的数据流拓扑。
+
+### 基本转换算子
+
+#### 映射（map）
+
+map 主要用于将数据流中的数据进行转换，形成新的数据流。简单来说，就是一个“一一映射”，消费一个元素就产出一个元素。
+
+![image-20220928114128762](Flink.assets/image-20220928114128762.png)
+
+我们只需要基于 DataStrema 调用 map()方法就可以进行转换处理。方法需要传入的参数是接口 MapFunction 的实现；返回值类型还是 DataStream，不过泛型（流中的元素类型）可能改变。
+
+```java
+public class TransMap {
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+
+        DataStreamSource<Event> streamSource = env.fromElements(
+                new Event("Mary", "./home", 1000L),
+                new Event("Bob", "./cart", 2000L)
+        );
+        //传入匿名类，实现MapFunction
+        streamSource.map(new MapFunction<Event, String>() {
+            @Override
+            public String map(Event value) throws Exception {
+                return value.user;
+            }
+        }).print();
+        //传入MapFunction的实现类
+        streamSource.map(new UserExtractor()).print();
+        env.execute();
+    }
+
+    public static class UserExtractor implements MapFunction<Event, String> {
+        @Override
+        public String map(Event value) throws Exception {
+            return value.url;
+        }
+    }
+}
+```
+
+![image-20220928120121741](Flink.assets/image-20220928120121741.png)
+
+上面代码中，MapFunction 实现类的泛型类型，与输入数据类型和输出数据的类型有关。 在实现 MapFunction 接口的时候，需要指定两个泛型，分别是输入事件和输出事件的类型，还需要重写一个 map()方法，定义从一个输入事件转换为另一个输出事件的具体逻辑。
+
+通过查看 Flink 源码可以发现，基于 DataStream 调用 map 方法，返回的其实是一个 SingleOutputStreamOperator。
+
+```java
+public <R> SingleOutputStreamOperator<R> map(MapFunction<T, R> mapper) {
+        TypeInformation<R> outType =
+                TypeExtractor.getMapReturnTypes(
+                        clean(mapper), getType(), Utils.getCallLocationName(), true);
+        return map(mapper, outType);
+    }
+```
+
+这表示 map 是一个用户可以自定义的转换（transformation）算子，它作用于一条数据流上，转换处理的结果是一个确定的输出类型。当然，SingleOutputStreamOperator 类本身也继承自 DataStream 类，所以说 map 是将一个 DataStream 转换成另一个 DataStream 是完全正确的。
+
+#### 过滤（filter）
+
+filter 转换操作，顾名思义是对数据流执行一个过滤，通过一个布尔条件表达式设置过滤条件，对于每一个流内元素进行判断，若为 true 则元素正常输出，若为 false 则元素被过滤掉
+
+![image-20220928120458324](Flink.assets/image-20220928120458324.png)
+
+进行 filter 转换之后的新数据流的数据类型与原数据流是相同的。filter 转换需要传入的参数需要实现 FilterFunction 接口，而 FilterFunction 内要实现 filter()方法，就相当于一个返回布尔类型的条件表达式。
+
+```java
+public class TransFilter {
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        DataStreamSource<Event> streamSource = env.fromElements(
+                new Event("Mary", "./home", 1000L),
+                new Event("Bob", "./cart", 2000L)
+        );
+        //传入匿名类实现FilterFunction
+        SingleOutputStreamOperator<Event> filter = streamSource.filter(new FilterFunction<Event>() {
+            @Override
+            public boolean filter(Event value) throws Exception {
+                return value.user.equalsIgnoreCase("Mary");
+            }
+        });
+        filter.print();
+        //传入FilterFunction实现类
+        streamSource.filter(new UserFilter()).print();
+        env.execute();
+    }
+
+    public static class UserFilter implements FilterFunction<Event> {
+        @Override
+        public boolean filter(Event value) throws Exception {
+            return value.url.equals("./cart");
+        }
+    }
+}
+```
+
+#### 扁平映射（flatMap）
+
+flatMap 操作又称为扁平映射，主要是将数据流中的整体（一般是集合类型）拆分成一个一个的个体使用。消费一个元素，可以产生 0 到多个元素。flatMap 可以认为是“扁平化”（flatten）和“映射”（map）两步操作的结合，也就是先按照某种规则对数据进行打散拆分，再对拆分后的元素做转换处理
+
+![image-20220928142555692](Flink.assets/image-20220928142555692.png)
+
+同 map 一样，flatMap 也可以使用 Lambda 表达式或者 FlatMapFunction 接口实现类的方式来进行传参，返回值类型取决于所传参数的具体逻辑，可以与原数据流相同，也可以不同。
+
+flatMap操作会应用在每一个输入事件上面，FlatMapFunction接口中定义了flatMap方法， 用户可以重写这个方法，在这个方法中对输入数据进行处理，并决定是返回 0 个、1 个或多个结果数据。因此flatMap并没有直接定义返回值类型，而是通过一个“收集器”（Collector）来指定输出。希望输出结果时，只要调用收集器的.collect()方法就可以了；这个方法可以多次调用，也可以不调用。所以flatMap方法也可以实现map方法和filter方法的功能，当返回结果是0个的时候，就相当于对数据进行了过滤，当返回结果是1个的时候，相当于对数据进行了简单的转换操作。
+
+```java
+public class TransFlatmap {
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        DataStreamSource<Event> streamSource = env.fromElements(
+                new Event("Mary", "./home", 1000L),
+                new Event("Bob", "./cart", 2000L)
+        );
+        SingleOutputStreamOperator<String> f = streamSource.flatMap(new FlatMapFunction<Event, String>() {
+            @Override
+            public void flatMap(Event value, Collector<String> out) throws Exception {
+                if (value.user.equals("Mary")) {
+                    out.collect(value.user);
+                } else if (value.user.equals("Bob")) {
+                    out.collect(value.user);
+                    out.collect(value.url);
+                }
+            }
+        });
+        f.print();
+        env.execute();
+    }
+}
+```
+
+### 聚合算子（Aggregation）
+
+直观上看，基本转换算子确实是在“转换”——因为它们都是基于当前数据，去做了处理和输出。而在实际应用中，我们往往需要对大量的数据进行统计或整合，从而提炼出更有用的信息。比如之前 word count 程序中，要对每个词出现的频次进行叠加统计。这种操作，计算的结果不仅依赖当前数据，还跟之前的数据有关，相当于要把所有数据聚在一起进行汇总合并 ——这就是所谓的“聚合”（Aggregation），也对应着 MapReduce 中的 reduce 操作。
+
+#### 按键分区（keyby）
+
+对于Flink而言，DataStream是没有直接进行聚合的API的。因为我们对海量数据做聚合肯定要进行分区并行处理，这样才能提高效率。所以在 Flink 中，要做聚合，需要先进行分区； 这个操作就是通过keyBy来完成的。
+
+keyBy是聚合前必须要用到的一个算子。keyBy通过指定键（key），可以将一条流从逻辑上划分成不同的分区（partitions）。这里所说的分区，其实就是并行处理的子任务，也就对应着任务槽（task slot）。
+
+基于不同的key，流中的数据将被分配到不同的分区中去，这样一来，所有具有相同的key的数据，都将被发往同一个分区，那么下一步算子操作就将会在同一个slot中进行处理了。
+
+![image-20220928145000692](Flink.assets/image-20220928145000692.png)
+
+在内部，是通过计算key的哈希值（hash code），对分区数进行取模运算来实现的。所以这里 key 如果是POJO的话，必须要重写hashCode()方法。
+
+keyBy()方法需要传入一个参数，这个参数指定了一个或一组key。有很多不同的方法来指定key：比如对于Tuple数据类型，可以指定字段的位置或者多个位置的组合；对于POJO类型，可以指定字段的名称（String）；另外，还可以传入Lambda表达式或者实现一个键选择器 （KeySelector），用于说明从数据中提取key的逻辑。
+
+```java
+public class TransKeyBy {
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        DataStreamSource<Event> streamSource = env.fromElements(
+                new Event("Mary", "./home", 1000L),
+                new Event("Bob", "./cart", 2000L)
+        );
+        //使用Lambda表达式
+        KeyedStream<Event, String> keyedStream = streamSource.keyBy(e -> e.user);
+        keyedStream.print();
+        //使用匿名类实现KeySelector
+        KeyedStream<Event, String> keyedStream1 = streamSource.keyBy(new KeySelector<Event, String>() {
+            @Override
+            public String getKey(Event value) throws Exception {
+                return value.user;
+            }
+        });
+        keyedStream1.print();
+        env.execute();
+    }
+}
+```
+
+需要注意的是，keyBy得到的结果将不再是DataStream，而是会将DataStream转换为KeyedStream。KeyedStream可以认为是“分区流”或者“键控流”，它是对DataStream按照key的一个逻辑分区，所以泛型有两个类型：除去当前流中的元素类型外，还需要指定key的类型。
+
+KeyedStream也继承自DataStream，所以基于它的操作也都归属于DataStream API。但它跟之前的转换操作得到的SingleOutputStreamOperator不同，只是一个流的分区操作，并不是一个转换算子。KeyedStream是一个非常重要的数据结构，只有基于它才可以做后续的聚合操作（比如 sum，reduce）；而且它可以将当前算子任务的状态（state）也按照key进行划分、限定为仅对当前key有效。
+
+#### 简单聚合
+
+有了按键分区的数据流KeyedStream，我们就可以基于它进行聚合操作了。Flink为我们内置实现了一些最基本、最简单的聚合API，主要有以下几种： 
+
+- sum()：在输入流上，对指定的字段做叠加求和的操作。
+- min()：在输入流上，对指定的字段求最小值。
+- max()：在输入流上，对指定的字段求最大值。
+- minBy()：与 min()类似，在输入流上针对指定字段求最小值。不同的是，min()只计算指定字段的最小值，其他字段会保留最初第一个数据的值；而minBy()则会返回包含字段最小值的整条数据。
+- maxBy()：与 max()类似，在输入流上针对指定字段求最大值。两者区别与 min()/minBy()完全一致。
+
+简单聚合算子使用非常方便，语义也非常明确。这些聚合方法调用时，也需要传入参数；但并不像基本转换算子那样需要实现自定义函数，只要说明聚合指定的字段就可以了。指定字段的方式有两种：指定位置，和指定名称。
+
+对于元组类型的数据，同样也可以使用这两种方式来指定字段。需要注意的是，元组中字段的名称，是以 f0、f1、f2、…来命名的。
+
+```java
+public class TransTupleAggreation {
+    public static void main(String[] args) throws Exception{
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        DataStreamSource<Tuple2<String, Integer>> streamSource = env.fromElements(
+                Tuple2.of("a", 1),
+                Tuple2.of("a", 3),
+                Tuple2.of("b", 3),
+                Tuple2.of("b", 4)
+        );
+        KeyedStream<Tuple2<String, Integer>, String> keyedStream = streamSource.keyBy(r -> r.f0);
+        keyedStream.sum(1).print("sum1");
+        keyedStream.sum("f1").print("sum2");
+        keyedStream.max(1).print("max1");
+        keyedStream.max("f1").print("max2");
+        keyedStream.maxBy(1).print("maxby");
+        keyedStream.minBy("f1").print("minby");
+        env.execute();
+    }
+}
+```
+
+![image-20220928154100312](Flink.assets/image-20220928154100312.png)
+
+注意输出
+
+如果数据流的类型是 POJO 类，那么就只能通过字段名称来指定，不能通过位置来指定。
+
+```java
+public class TransPOJOAggregation {
+    public static void main(String[] args) throws Exception{
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        DataStreamSource<Event> streamSource = env.fromElements(
+                new Event("Mary", "./home", 1000L),
+                new Event("Bob", "./cart", 2000L)
+        );
+        streamSource.keyBy(e->e.user).max("timestamp").print();
+        env.execute();
+    }
+}
+```
+
+简单聚合算子返回的，同样是一个SingleOutputStreamOperator，也就是从KeyedStream又转换成了常规的DataStream。所以可以这样理解：keyBy和聚合是成对出现的，先分区、后聚合，得到的依然是一个DataStream。而且经过简单聚合之后的数据流，元素的数据类型保持不变。
+
+一个聚合算子，会为每一个key保存一个聚合的值，在Flink中我们把它叫作“状态”（state）。 所以每当有一个新的数据输入，算子就会更新保存的聚合结果，并发送一个带有更新后聚合值的事件到下游算子。
+
+#### 归约聚合（reduce）
+
+与简单聚合类似，reduce 操作也会将 KeyedStream 转换为 DataStream。它不会改变流的元素数据类型，所以输出类型和输入类型是一样的。 调用 KeyedStream 的 reduce 方法时，需要传入一个参数，实现 ReduceFunction 接口。
+
+```java
+public interface ReduceFunction<T> extends Function, Serializable {
+	T reduce(T value1, T value2) throws Exception;
+}
+```
+
+ReduceFunction接口里需要实现reduce()方法，这个方法接收两个输入事件，经过转换处理之后输出一个相同类型的事件；所以，对于一组数据，我们可以先取两个进行合并，然后再将合并的结果看作一个数据、再跟后面的数据合并，最终会将它“简化”成唯一的一个数据， 这也就是reduce“归约”的含义。在流处理的底层实现过程中，实际上是将中间“合并的结果” 作为任务的一个状态保存起来的；之后每来一个新的数据，就和之前的聚合状态进一步做归约。
+
+其实，reduce的语义是针对列表进行规约操作，运算规则由ReduceFunction中的reduce方法来定义，而在ReduceFunction内部会维护一个初始值为空的累加器，注意累加器的类型和输入元素的类型相同，当第一条元素到来时，累加器的值更新为第一条元素的值，当新的元素到来时，新元素会和累加器进行累加操作，这里的累加操作就是reduce函数定义的运算规则。然后将更新以后的累加器的值向下游输出。
+
+我们可以单独定义一个函数类实现ReduceFunction接口，也可以直接传入一个匿名类。 当然，同样也可以通过传入Lambda表达式实现类似的功能。
+
+将数据流按照用户id进行分区，然后用一个reduce算子实现sum的功能，统计每个用户访问的频次；进而将所有统计结果分到一组，用另一个reduce算子实现maxBy的功能，记录所有用户中访问频次最高的那个，也就是当前访问量最大的用户是谁。
+
+```java
+public class TransReduce {
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        env.addSource(new ClickSource())
+                //将Event数据类型转换成元组类型
+                .map(new MapFunction<Event, Tuple2<String, Long>>() {
+                    @Override
+                    public Tuple2<String, Long> map(Event value) throws Exception {
+                        return Tuple2.of(value.user, 1L);
+                    }
+                })
+                //使用用户名来进行分流
+                .keyBy(r -> r.f0)
+                .reduce(new ReduceFunction<Tuple2<String, Long>>() {
+                    @Override
+                    public Tuple2<String, Long> reduce(Tuple2<String, Long> value1, Tuple2<String, Long> value2) throws Exception {
+                        //每到一条数据，用户pv的统计值加1
+                        return Tuple2.of(value1.f0, value1.f1 + value2.f1);
+                    }
+                })
+                //为每一条数据分配同一个key，将聚合结果发送到一条流中去
+                .keyBy(r -> true)
+                .reduce(new ReduceFunction<Tuple2<String, Long>>() {
+                    @Override
+                    public Tuple2<String, Long> reduce(Tuple2<String, Long> value1, Tuple2<String, Long> value2) throws Exception {
+                        //将累加器更新为当前最大的pv统计值，然后向下游发送累加器的值
+                        return value1.f1 > value2.f1 ? value1 : value2;
+                    }
+                })
+                .print();
+        env.execute();
+    }
+}
+```
+
+### 用户自定义函数（UDF）
+
+Flink的DataStream API 编程风格其实是一致的：基本上都是基于DataStream调用一个方法，表示要做一个转换操作；方法需要传入一个参数，这个参数都是需要实现一个接口。
+
+这些接口有一个共同特点：全部都以算子操作名称 + Function 命名，例如源算子需要实现 SourceFunction 接口，map 算子需要实现 MapFunction 接口，reduce 算子需要实现 ReduceFunction 接口。而且查看源码会发现，它们都继承自 Function 接口；这个接口是空的，主要就是为了方便扩展为单一抽象方法（Single Abstract Method，SAM）接口，这就是我们所说的“函数接口”——比如 MapFunction 中需要实现一个 map()方法，ReductionFunction 中需要实现一个 reduce()方法，它们都是 SAM 接口。我们知道，Java 8 新增的 Lambda 表达式就可以实现 SAM 接口；所以这样的好处就是，我们不仅可以通过自定义函数类或者匿名类来实现接口，也可以直接传入 Lambda 表达式。这就是所谓的用户自定义函数（user-defined  function，UDF）。
+
+#### 函数类（Function Classes）
+
+对于大部分操作而言，都需要传入一个用户自定义函数（UDF），实现相关操作的接口， 来完成处理逻辑的定义。Flink 暴露了所有 UDF 函数的接口，具体实现方式为接口或者抽象类， 例如 MapFunction、FilterFunction、ReduceFunction 等。
+
+所以最简单直接的方式，就是自定义一个函数类，实现对应的接口。之前我们对于 API 的练习，主要就是基于这种方式。
+
+#### 匿名函数（Lambda）
+
+匿名函数（Lambda 表达式）是 Java 8 引入的新特性，方便我们更加快速清晰地写代码。 Lambda 表达式允许以简洁的方式实现函数，以及将函数作为参数来进行传递，而不必声明额外的（匿名）类。
+
+Flink 的所有算子都可以使用 Lambda 表达式的方式来进行编码，但是，当 Lambda 表达式使用 Java 的泛型时，我们需要显式的声明类型信息。
+
+```java
+public class ReturnTypeResolve {
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        DataStreamSource<Event> streamSource = env.fromElements(
+                new Event("Mary", "./home", 1000L),
+                new Event("Bob", "./cart", 2000L)
+        );
+        //想要转换成二元组类型，需要进行以下处理
+        //(1)使用显式的 ".return(...)"
+        SingleOutputStreamOperator<Tuple2<String, Long>> returns = streamSource
+                .map(event -> Tuple2.of(event.user, 1L))
+                .returns(Types.TUPLE(Types.STRING, Types.LONG));
+        returns.print();
+        //(2)使用类来代替Lambda表达式
+        streamSource.map(new MyTuple2Mapper())
+                .print();
+        //(3)使用匿名类来代替Lambda表达式
+        streamSource.map(new MapFunction<Event, Tuple2<String, Long>>() {
+            @Override
+            public Tuple2<String, Long> map(Event value) throws Exception {
+                return Tuple2.of(value.user, 1L);
+            }
+        }).print();
+        env.execute();
+    }
+
+    public static class MyTuple2Mapper implements MapFunction<Event, Tuple2<String, Long>> {
+        @Override
+        public Tuple2<String, Long> map(Event value) throws Exception {
+            return Tuple2.of(value.user, 1L);
+        }
+    }
+}
+```
+
+这些方法对于其他泛型擦除的场景同样适用
+
+#### 富类函数（Rich Function Classes）
+
+“富函数类”也是 DataStream API 提供的一个函数类的接口，所有的 Flink 函数类都有其 Rich 版本。富函数类一般是以抽象类的形式出现的。例如：RichMapFunction、RichFilterFunction、 RichReduceFunction 等。 
+
+既然“富”，那么它一定会比常规的函数类提供更多、更丰富的功能。与常规函数类的不同主要在于，富函数类可以获取运行环境的上下文，并拥有一些生命周期方法，所以可以实现更复杂的功能。
+
+Rich Function 有生命周期的概念。典型的生命周期方法有：
+
+- open()方法，是 Rich Function 的初始化方法，也就是会开启一个算子的生命周期。当一个算子的实际工作方法例如map()或者filter()方法被调用之前，open()会首先被调用。所以像文件IO的创建，数据库连接的创建，配置文件的读取等等这样一次性的工作，都适合在open()方法中完成。
+- close()方法，是生命周期中的最后一个调用的方法，类似于解构方法。一般用来做一些清理工作。
+
+需要注意的是，这里的生命周期方法，对于一个并行子任务来说只会调用一次；而对应的， 实际工作方法，例如RichMapFunction中的map()，在每条数据到来后都会触发一次调用。
+
+```java
+package com.zhuweihao.DataStreamAPI;
+
+import org.apache.flink.api.common.functions.RichMapFunction;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.streaming.api.datastream.DataStreamSource;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+
+/**
+ * @Author zhuweihao
+ * @Date 2022/9/28 17:20
+ * @Description com.zhuweihao.DataStreamAPI
+ */
+public class RichFunction {
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(2);
+        DataStreamSource<Event> streamSource = env.fromElements(
+            new Event("Mary", "./home", 1000L),
+            new Event("Bob", "./cart", 2000L),
+            new Event("Alice", "./prod?id=1", 5 * 1000L),
+            new Event("Cary", "./home", 60 * 1000L)
+        );
+        //将点击事件转换成长整型的时间戳输出
+        streamSource.map(new RichMapFunction<Event, Long>() {
+            @Override
+            public void open(Configuration parameters) throws Exception {
+                super.open(parameters);
+                System.out.println("索引为" + getRuntimeContext().getIndexOfThisSubtask() + "的任务开始");
+            }
+
+            @Override
+            public void close() throws Exception {
+                super.close();
+                System.out.println("索引为" + getRuntimeContext().getIndexOfThisSubtask() + "的任务结束");
+            }
+
+            @Override
+            public Long map(Event value) throws Exception {
+                return value.timestamp;
+            }
+        }).print();
+        env.execute();
+    }
+}
+```
+
+![image-20220928173410223](Flink.assets/image-20220928173410223.png)
+
+### 物理分区（Physical Partitioning）
+
+Flink 对于经过转换操作之后的 DataStream，提供了一系列的底层操作接口，能够帮我们实现数据流的手动重分区。为了同 keyBy 相区别，我们把这些操作统称为“物理分区” 操作。物理分区与 keyBy 另一大区别在于，keyBy 之后得到的是一个 KeyedStream，而物理分区之后结果仍是 DataStream，且流中元素数据类型保持不变。从这一点也可以看出，分区算子并不对数据进行转换处理，只是定义了数据的传输方式。
+
+常见的物理分区策略有随机分配（Random）、轮询分配（Round-Robin）、重缩放（Rescale） 和广播（Broadcast）。
+
+#### 随机分区（shuffle）
+
+最简单的重分区方式就是直接“洗牌”。通过调用 DataStream 的.shuffle()方法，将数据随机地分配到下游算子的并行任务中去。
+
+随机分区服从均匀分布（uniform distribution），所以可以把流中的数据随机打乱，均匀地传递到下游任务分区。因为是完全随机的，所以对于同样的输入数据, 每次执行得到的结果也不会相同。
+
+![image-20220928175130791](Flink.assets/image-20220928175130791.png)
+
 
 
 # 状态编程
@@ -678,9 +1244,9 @@ Flink处理机制的核心，就是“有状态的流式计算”。
 
 ### 有状态算子
 
-在 Flink 中，算子任务可以分为无状态和有状态两种情况。
+在Flink中，算子任务可以分为无状态和有状态两种情况。
 
-无状态的算子任务只需要观察每个独立事件，根据当前输入的数据直接转换输出结果，如下图所示。例如，可以将一个字符串类型的数据拆分开作为元组输出；也可以对数据做一些计算，比如每个代表数量的字段加 1。如 map、filter、flatMap， 计算时不依赖其他数据，就都属于无状态的算子。
+无状态的算子任务只需要观察每个独立事件，根据当前输入的数据直接转换输出结果，如下图所示。例如，可以将一个字符串类型的数据拆分开作为元组输出；也可以对数据做一些计算，比如每个代表数量的字段加1。如map、filter、flatMap， 计算时不依赖其他数据，就都属于无状态的算子。
 
 ![image-20220922132512219](Flink.assets/image-20220922132512219.png)
 
