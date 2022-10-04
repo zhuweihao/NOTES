@@ -1228,15 +1228,163 @@ Flink 对于经过转换操作之后的 DataStream，提供了一系列的底层
 
 ![image-20220928175130791](Flink.assets/image-20220928175130791.png)
 
+```java
+public class ShuffleTest {
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        //读取数据源，并行度为1
+        DataStreamSource<Event> streamSource = env.addSource(new ClickSource());
+        //经洗牌后打印输出，并行度为4
+        streamSource.shuffle().print("shuffle").setParallelism(4);
+        env.execute();
+    }
+}
+```
+
 #### 轮询分区（Round-Robin）
 
 轮询也是一种常见的重分区方式。简单来说就是“发牌”，按照先后顺序将数据做依次分发，如图所示。通过调用 DataStream的.rebalance()方法，就可以实现轮询重分区。rebalance使用的是Round-Robin负载均衡算法，可以将输入流数据平均分配到下游的并行任务中去。
 
 ![image-20221004131130808](Flink.assets/image-20221004131130808.png)
 
+```java
+public class RebalanceTest {
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        //读取数据源，并行度为1
+        DataStreamSource<Event> streamSource = env.addSource(new ClickSource());
+        //经轮询重分区后打印输出，并行度为4
+        streamSource.rebalance().print("rebalance").setParallelism(4);
+        env.execute();
+    }
+}
+```
 
+#### 重缩放分区（rescale）
 
+重缩放分区和轮询分区非常相似。当调用 rescale()方法时，其实底层也是使用 Round-Robin 算法进行轮询，但是只会将数据轮询发送到下游并行任务的一部分中，如图所示。也就是说，“发牌人”如果有多个，那么 rebalance 的方式是每个发牌人都面向所有人发牌；而 rescale 的做法是分成小团体，发牌人只给自己团体内的所有人轮流发牌。
 
+![image-20221004143257379](Flink.assets/image-20221004143257379.png)
+
+当下游任务（数据接收方）的数量是上游任务（数据发送方）数量的整数倍时，rescale 的效率明显会更高。比如当上游任务数量是 2，下游任务数量是 6 时，上游任务其中一个分区的数据就将会平均分配到下游任务的 3 个分区中。 
+
+由于 rebalance 是所有分区数据的“重新平衡”，当 TaskManager 数据量较多时，这种跨节点的网络传输必然影响效率；而如果我们配置的 task slot 数量合适，用 rescale 的方式进行“局部重缩放”，就可以让数据只在当前 TaskManager 的多个 slot 之间重新分配，从而避免了网络 传输带来的损耗。
+
+从底层实现上看，rebalance 和 rescale 的根本区别在于任务之间的连接机制不同。rebalance 将会针对所有上游任务（发送数据方）和所有下游任务（接收数据方）之间建立通信通道，这是一个笛卡尔积的关系；而 rescale 仅仅针对每一个任务和下游对应的部分任务之间建立通信通道，节省了很多资源。
+
+```java
+public class RescaleTest {
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        // 这里使用了并行数据源的富函数版本
+        // 这样可以调用 getRuntimeContext 方法来获取运行时上下文的一些信息
+        DataStreamSource<Integer> streamSource = env.addSource(new RichParallelSourceFunction<Integer>() {
+            @Override
+            public void run(SourceContext<Integer> ctx) throws Exception {
+                for (int i = 0; i < 8; i++) {
+                    // 将奇数发送到索引为 1 的并行子任务
+                    // 将偶数发送到索引为 0 的并行子任务
+                    if ((i + 1) % 2 == getRuntimeContext().getIndexOfThisSubtask()) {
+                        ctx.collect(i + 1);
+                    }
+                }
+            }
+
+            @Override
+            public void cancel() {
+
+            }
+        });
+        streamSource
+                .setParallelism(2)
+                .rescale()
+                .print("rescale")
+                .setParallelism(4);
+        env.execute();
+    }
+}
+```
+
+可以将 rescale 方法换成 rebalance 方法，来体会一下这两种方法的区别。
+
+#### 广播（broadcast）
+
+这种方式其实不应该叫做“重分区”，因为经过广播之后，数据会在不同的分区都保留一份，可能进行重复处理。可以通过调用 DataStream 的 broadcast()方法，将输入数据复制并发送到下游算子的所有并行任务中去。
+
+```java
+public class BroadcastTest {
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        //读取数据源，并行度为1
+        DataStreamSource<Event> streamSource = env.addSource(new ClickSource());
+        //经广播后打印输出，并行度为4
+        streamSource.broadcast().print("broadcast").setParallelism(4);
+        env.execute();
+    }
+}
+```
+
+#### 全局分区（global）
+
+全局分区也是一种特殊的分区方式。这种做法非常极端，通过调用.global()方法，会将所有的输入流数据都发送到下游算子的第一个并行子任务中去。这就相当于强行让下游任务并行度变成了 1，所以使用这个操作需要非常谨慎，可能对程序造成很大的压力。
+
+#### 自定义分区（Custom）
+
+当Flink提供的所有分区策略都不能满足用户的需求时 ， 我们可以通过使用partitionCustom()方法来自定义分区策略。
+
+在调用时，方法需要传入两个参数，第一个是自定义分区器（Partitioner）对象，第二个是应用分区器的字段，它的指定方式与 keyBy 指定key基本一样：可以通过字段名称指定， 也可以通过字段位置索引来指定，还可以实现一个KeySelector。
+
+例如，我们可以对一组自然数按照奇偶性进行重分区。代码如下：
+
+```java
+public class CustomPartitionTest {
+    public static void main(String[] args) throws Exception{
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        env.fromElements(1,2,3,4,5,6,7,8)
+                .partitionCustom(new Partitioner<Integer>() {
+                    @Override
+                    public int partition(Integer key, int numPartitions) {
+                        return key % 2;
+                    }
+                }, new KeySelector<Integer, Integer>() {
+                    @Override
+                    public Integer getKey(Integer value) throws Exception {
+                        return value;
+                    }
+                })
+                .print()
+                .setParallelism(2);
+        env.execute();
+    }
+}
+```
+
+## 输出算子（Sink）
+
+![image-20221004214915334](Flink.assets/image-20221004214915334.png)
+
+Flink 作为数据处理框架，最终还是要把计算处理的结果写入外部存储，为外部应用提供支持。
+
+### 连接到外部系统
+
+Flink的DataStream API专门提供了向外部写入数据的方法：addSink。与addSource类似，addSink方法对应着一个“Sink”算子，主要就是用来实现与外部系统连接、并将数据提交写入的；Flink程序中所有对外的输出操作，一般都是利用Sink算子完成的。
+
+之前我们一直在使用的print方法其实就是一种Sink，它表示将数据流写入标准控制台打印输出。查看源码可以发现，print方法返回的就是一个DataStreamSink。
+
+```java
+@PublicEvolving
+public DataStreamSink<T> print() {
+    PrintSinkFunction<T> printFunction = new PrintSinkFunction<>();
+    return addSink(printFunction).name("Print to Std. Out");
+}
+```
+
+与Source算子非常类似，除去一些Flink预实现的Sink，一般情况下Sink算子的创建是通过调用DataStream的.addSink()方法实现的。
 
 # 状态编程
 
