@@ -1228,6 +1228,14 @@ Flink 对于经过转换操作之后的 DataStream，提供了一系列的底层
 
 ![image-20220928175130791](Flink.assets/image-20220928175130791.png)
 
+#### 轮询分区（Round-Robin）
+
+轮询也是一种常见的重分区方式。简单来说就是“发牌”，按照先后顺序将数据做依次分发，如图所示。通过调用 DataStream的.rebalance()方法，就可以实现轮询重分区。rebalance使用的是Round-Robin负载均衡算法，可以将输入流数据平均分配到下游的并行任务中去。
+
+![image-20221004131130808](Flink.assets/image-20221004131130808.png)
+
+
+
 
 
 # 状态编程
