@@ -1386,6 +1386,46 @@ public DataStreamSink<T> print() {
 
 与Source算子非常类似，除去一些Flink预实现的Sink，一般情况下Sink算子的创建是通过调用DataStream的.addSink()方法实现的。
 
+```java
+stream.addSink(new SinkFunction(…));
+```
+
+addSource的参数需要实现一个SourceFunction接口；类似地，addSink方法同样需要传入一个参数，实现的是SinkFunction接口。在这个接口中只需要重写一个方法invoke()，用来将指定的值写入到外部系统中。这个方法在每条数据记录到来时都会调用：
+
+```java
+default void invoke(IN value, Context context) throws Exception
+```
+
+一些比较基本的Source和Sink已经内置在Flink里。 预定义data sources支持从文件、目录、socket，以及collections和iterators中读取数据。 预定义data sinks支持把数据写入文件、标准输出（stdout）、标准错误输出（stderr）和 socket。
+
+目前支持以下系统:
+
+- Apache Kafka (source/sink)
+- Apache Cassandra (sink)
+- Amazon Kinesis Streams (source/sink)
+- Elasticsearch (sink)
+- FileSystem（包括 Hadoop ） - 仅支持流 (sink)
+- FileSystem（包括 Hadoop ） - 流批统一 (sink)
+- RabbitMQ (source/sink)
+- Apache NiFi (source/sink)
+- Twitter Streaming API (source)
+- Google PubSub (source/sink)
+- JDBC (sink)
+
+请记住，在使用一种连接器时，通常需要额外的第三方组件，比如：数据存储服务器或者消息队列。要注意这些列举的连接器是Flink工程的一部分，包含在发布的源码中，但是不包含在二进制发行版中。
+
+除 Flink 官方之外，Apache Bahir作为给Spark和Flink提供扩展支持的项目，也实现了一 些其他第三方系统与Flink的连接器，Flink还有些一些额外的连接器通过Apache Bahir发布, 包括：
+
+- Apache ActiveMQ (source/sink)
+- Apache Flume (sink)
+- Redis (sink)
+- Akka (sink)
+- Netty (source)
+
+除此以外，就需要用户自定义实现sink连接器了。
+
+
+
 # 状态编程
 
 Flink处理机制的核心，就是“有状态的流式计算”。
