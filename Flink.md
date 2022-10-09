@@ -1454,9 +1454,239 @@ FileSink支持行编码格式和批量编码格式，比如 [Apache Parquet](htt
 - Custom RollingPolicy：自定义滚动策略以覆盖默认的 DefaultRollingPolicy。
 - bucketCheckInterval（默认为1分钟）：毫秒间隔，用于基于时间的滚动策略。
 
+```java
+public class FileSinkTest {
+    public static void main(String[] args) throws Exception{
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(4);
+        DataStreamSource<Event> streamSource = env.fromElements(
+            new Event("Mary", "./home", 1000L),
+            new Event("Bob", "./cart", 2000L),
+            new Event("Alice", "./prod?id=100", 3000L),
+            new Event("Alice", "./prod?id=200", 3500L),
+            new Event("Bob", "./prod?id=2", 2500L),
+            new Event("Alice", "./prod?id=300", 3600L),
+            new Event("Bob", "./home", 3000L),
+            new Event("Bob", "./prod?id=1", 2300L),
+            new Event("Bob", "./prod?id=3", 3300L)
+        );
+        FileSink<String> fileSink = FileSink
+                .forRowFormat(new Path("Flink/src/main/resources"), new SimpleStringEncoder<String>("UTF-8"))
+                .withRollingPolicy(
+                        DefaultRollingPolicy.builder()
+                                .withRolloverInterval(TimeUnit.MINUTES.toMillis(15))
+                                .withInactivityInterval(TimeUnit.MINUTES.toMillis(5))
+                                .withMaxPartSize(1024 * 1024 * 1024)
+                                .build()
+                )
+                .build();
+        streamSource.map(Event::toString).sinkTo(fileSink);
+        env.execute();
+    }
+}
+```
+
+这里我们创建了一个简单的文件Sink，通过.withRollingPolicy()方法指定了一个“滚动策略”。“滚动”的概念在日志文件的写入中经常遇到：因为文件会有内容持续不断地写入，所以我们应该给一个标准，到什么时候就开启新的文件，将之前的内容归档保存。也就是说，上面 的代码设置了在以下3种情况下，我们就会滚动分区文件：
+
+- 至少包含15分钟的数据
+- 最近5分钟没有收到新的数据
+- 文件大小已达到1GB
+
+##### 批量编码格式
+
+批量编码Sink的创建与行编码Sink相似，不过在这里我们不是指定编码器Encoder而是指定BulkWriter.Factory 。 BulkWriter定义了如何添加、刷新元素，以及如何批量编码。
+
+Flink 有四个内置的 BulkWriter Factory ：
+
+- ParquetWriterFactory
+- AvroWriterFactory
+- SequenceFileWriterFactory
+- CompressWriterFactory
+- OrcBulkWriterFactory
+
+> **重要:** 批量编码模式仅支持 OnCheckpointRollingPolicy 策略, 在每次 checkpoint 的时候滚动文件。 
+>
+> **重要:** 批量编码模式必须使用继承自 CheckpointRollingPolicy 的滚动策略, 这些策略必须在每次 checkpoint 的时候滚动文件，但是用户也可以进一步指定额外的基于文件大小和超时时间的策略。
+
+详细示例见：[File Sink | Apache Flink](https://nightlies.apache.org/flink/flink-docs-release-1.13/zh/docs/connectors/datastream/file_sink/)
+
+#### 桶分配
+
+桶分配逻辑定义了如何将数据结构化为基本输出目录中的子目录
+
+行格式和批量格式都使用 DateTimeBucketAssigner 作为默认的分配器。 默认情况下，DateTimeBucketAssigner 基于系统默认时区每小时创建一个桶，格式如下： yyyy-MM-dd--HH 。日期格式（即桶的大小）和时区都可以手动配置。
+
+我们可以在格式构建器上调用 .withBucketAssigner(assigner) 来自定义 BucketAssigner 。
+
+Flink 有两个内置的 BucketAssigners ：
+
+- DateTimeBucketAssigner：默认基于时间的分配器
+- BasePathBucketAssigner ：将所有部分文件（part file）存储在基本路径中的分配器（单个全局桶）
+
+#### 部分文件（part file）生命周期
+
+为了在下游系统中使用 FileSink 的输出，我们需要了解输出文件的命名规则和生命周期。
+
+部分文件（part file）可以处于以下三种状态之一：
+
+1. **In-progress** ：当前文件正在写入中。
+2. **Pending** ：当处于 In-progress 状态的文件关闭（closed）了，就变为 Pending 状态。
+3. **Finished** ：在成功的 Checkpoint 后（流模式）或作业处理完所有输入数据后（批模式），Pending 状态将变为 Finished 状态。
+
+处于 Finished 状态的文件不会再被修改，可以被下游系统安全地读取。
+
+> **重要:** 部分文件的索引在每个 subtask 内部是严格递增的（按文件创建顺序）。但是索引并不总是连续的。当 Job 重启后，所有部分文件的索引从 `max part index + 1` 开始， 这里的 `max part index` 是所有 subtask 中索引的最大值。
+
+对于每个活动的桶，Writer 在任何时候都只有一个处于 In-progress 状态的部分文件（part file），但是可能有几个 Penging 和 Finished 状态的部分文件（part file）。
+
+### Kafka
 
 
 
+```java
+public class KafkaSink {
+    public static void main(String[] args) throws Exception{
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+
+        Properties properties = new Properties();
+        properties.setProperty("bootstrap.servers","172.22.5.12:9092");
+
+        DataStreamSource<String> streamSource = env.readTextFile("Flink/src/main/resources/clicks.csv");
+        streamSource
+                .addSink(new FlinkKafkaProducer<String>(
+                        "clicks",
+                        new SimpleStringSchema(),
+                        properties
+                ));
+        env.execute();
+    }
+}
+```
+
+
+
+### JDBC
+
+
+
+```java
+public class JDBCSink {
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        DataStreamSource<Event> streamSource = env.fromElements(
+                new Event("Mary", "./home", 1000L),
+                new Event("Bob", "./cart", 2000L),
+                new Event("Alice", "./prod?id=100", 3000L),
+                new Event("Alice", "./prod?id=200", 3500L),
+                new Event("Bob", "./prod?id=2", 2500L),
+                new Event("Alice", "./prod?id=300", 3600L),
+                new Event("Bob", "./home", 3000L),
+                new Event("Bob", "./prod?id=1", 2300L),
+                new Event("Bob", "./prod?id=3", 3300L)
+        );
+        streamSource.addSink(
+                JdbcSink.sink(
+                        "insert into clicks (user,url) values (?,?)",
+                        (preparedStatement, event) -> {
+                            preparedStatement.setString(1,event.user);
+                            preparedStatement.setString(2,event.url);
+                        },
+                        JdbcExecutionOptions.builder()
+                                .withBatchSize(1000)
+                                .withBatchIntervalMs(200)
+                                .withMaxRetries(5)
+                                .build(),
+                        new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
+                                .withUrl("jdbc:mysql://localhost:3306/bigdata")
+                                .withDriverName("com.mysql.cj.jdbc.Driver")
+                                .withUsername("root")
+                                .withPassword("03283X")
+                                .build()
+                )
+        );
+        env.execute();
+    }
+}
+```
+
+
+
+### 自定义Sink输出
+
+在实现 SinkFunction 的时候，需要重写的一个关键方法 invoke()，在这个方法中我们就可 以实现将流里的数据发送出去的逻辑。
+
+```java
+public class SinkCustom {
+    public static void main(String[] args) throws Exception{
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        DataStreamSource<Event> streamSource = env.fromElements(
+                new Event("Mary", "./home", 1000L)
+        );
+        streamSource.addSink(new RichSinkFunction<Event>() {
+            @Override
+            public void open(Configuration parameters) throws Exception {
+                super.open(parameters);
+            }
+
+            @Override
+            public void close() throws Exception {
+                super.close();
+            }
+
+            @Override
+            public void invoke(Event value, Context context) throws Exception {
+                super.invoke(value, context);
+            }
+        });
+        env.execute();
+    }
+}
+```
+
+
+
+# Flink中的时间和窗口
+
+在流数据处理应用中，一个很重要、也很常见的操作就是窗口计算。所谓的“窗口”，一 般就是划定的一段时间范围，也就是“时间窗”；对在这范围内的数据进行处理，就是所谓的窗口计算。所以窗口和时间往往是分不开的。
+
+## 时间语义
+
+有两个非常重要的时间点：一个是数据产生的时间，我们把它叫作“事件时间”（Event Time）；另一个是数据真正被处理的时刻，叫作“处理时间”（Processing Time）。 我们所定义的窗口操作，到底是以那种时间作为衡量标准，就是所谓的“时间语义”（Notions  of Time）。由于分布式系统中网络传输的延迟和时钟漂移，处理时间相对事件发生的时间会有所滞后。
+
+### 处理时间（Processing Time）
+
+处理时间的概念非常简单，就是指执行处理操作的机器的系统时间。 
+
+如果我们以它作为衡量标准，那么数据属于哪个窗口就很明显了：只看窗口任务处理这条数据时，当前的系统时间。
+
+这种方法非常简单粗暴，不需要各个节点之间进行协调同步，也不需要考虑数据在流中的位置，简单来说就是“我的地盘听我的”。所以处理时间是最简单的时间语义。
+
+### 事件时间（Event Time）
+
+事件时间，是指每个事件在对应的设备上发生的时间，也就是数据生成的时间。
+
+数据一旦产生，这个时间自然就确定了，所以它可以作为一个属性嵌入到数据中。这其实就是这条数据记录的“时间戳”（Timestamp）。 
+
+在事件时间语义下，我们对于时间的衡量，就不看任何机器的系统时间了，而是依赖于数据本身。
+
+由于流处理中数据是源源不断产生的，一般来说，先产生的数据也会先被处理，所以当任务不停地接到数据时，它们的时间戳也基本上是不断增长的，就可以代表时间的推进。 当然我们会发现，这里有个前提，就是“先产生的数据先被处理”，这要求我们可以保证数据到达的顺序。但是由于分布式系统中网络传输延迟的不确定性，实际应用中我们要面对的数据流往往是乱序的。在这种情况下，就不能简单地把数据自带的时间戳当作时钟了，而需要用另外的标志来表示事件时间进展，在 Flink 中把它叫作事件时间的“水位线”（Watermarks）。
+
+### 小结
+
+在实际应用中，事件时间语义会更为常见。一般情况下，业务日志数据中都会记录数据生成的时间戳（timestamp），它就可以作为事件时间的判断基础。
+
+实际应用中，数据产生的时间和处理的时间可能是完全不同的。很长时间收集起来的数据，处理或许只要一瞬间；也有可能数据量过大、处理能力不足，短时间堆了大量数据处理不完，产生“背压”（back pressure）。
+
+通常来说，处理时间是我们计算效率的衡量标准，而事件时间会更符合我们的业务计算逻辑。所以更多时候我们使用事件时间；不过处理时间也不是一无是处。对于处理时间而言，由 于没有任何附加考虑，数据一来就直接处理，因此这种方式可以让我们的流处理延迟降到最低，效率达到最高。
+
+另外，除了事件时间和处理时间，Flink 还有一个“摄入时间”（Ingestion Time）的概念， 它是指数据进入 Flink 数据流的时间，也就是 Source 算子读入数据的时间。摄入时间相当于是事件时间和处理时间的一个中和，它是把 Source 任务的处理时间，当作了数据的产生时间添加到数据里。这样一来，水位线（watermark）也就基于这个时间直接生成，不需要单独指定了。这种时间语义可以保证比较好的正确性，同时又不会引入太大的延迟。它的具体行为跟事件时间非常像，可以当作特殊的事件时间来处理。
+
+在 Flink 中，由于处理时间比较简单，早期版本默认的时间语义是处理时间；而考虑到事件时间在实际应用中更为广泛，从 1.12 版本开始，Flink 已经将事件时间作为了默认的时间语 义。
+
+## 水位线（Watermark）
 
 
 
