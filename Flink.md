@@ -1874,7 +1874,7 @@ public class Watermark {
 }
 ```
 
-上面代码中，我们同样提取了 timestamp 字段作为时间戳，并且以 5 秒的延迟时间创建了 处理乱序流的水位线生成器。
+上面代码中，我们同样提取了 timestamp 字段作为时间戳，并且以 5 秒的延迟时间创建了处理乱序流的水位线生成器。
 
 事实上，有序流的水位线生成器本质上和乱序流是一样的，相当于延迟设为0的乱序流水位线生成器，两者完全等同：
 
@@ -2553,9 +2553,496 @@ public class ProcessWindowExample {
 
 这里我们使用的是事件时间语义。定义10秒钟的滚动事件窗口后，直接使用ProcessWindowFunction来定义处理的逻辑。我们可以创建一个HashSet，将窗口所有数据的userId写入实现去重，最终得到HashSet的元素个数就是UV值。
 
-当然，这里我们并没有用到上下文中其他信息，所以其实没有必要使用ProcessWindowFunction。全窗口函数因为运行效率较低，很少直接单独使用，往往会和增量 聚合函数结合在一起，共同实现窗口的处理计算。
+当然，这里我们并没有用到上下文中其他信息，所以其实没有必要使用ProcessWindowFunction。全窗口函数因为运行效率较低，很少直接单独使用，往往会和增量聚合函数结合在一起，共同实现窗口的处理计算。
 
+#### 增量聚合和全窗口函数的结合使用
 
+我们之前在调用WindowedStream的.reduce()和.aggregate()方法时，只是简单地直接传入了一个ReduceFunction或AggregateFunction进行增量聚合。除此之外，其实还可以传入第二个参数：一个全窗口函数，可以是WindowFunction或者ProcessWindowFunction。
+
+这样调用的处理机制是：基于第一个参数（增量聚合函数）来处理窗口数据，每来一个数据就做一次聚合；等到窗口需要触发计算时，则调用第二个参数（全窗口函数）的处理逻辑输出结果。需要注意的是，这里的全窗口函数就不再缓存所有数据了，而是直接将增量聚合函数的结果拿来当作了Iterable类型的输入。一般情况下，这时的可迭代集合中就只有一个元素了。
+
+在网站的各种统计指标中，一个很重要的统计指标就是热门的链接；想要得到热门的url，前提是得到每个链接的“热门度”。一般情况下，可以用url的浏览量（点击量）表示热门度。我们这里统计10秒钟的url浏览量，每5秒钟更新一次；另外为了更加清晰地展示，还应该把窗口的起始结束时间一起输出。我们可以定义滑动窗口， 并结合增量聚合函数和全窗口函数来得到统计结果。
+
+```java
+public class UrlViewCountExample {
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        SingleOutputStreamOperator<Event> stream = env.addSource(new ClickSource())
+                .assignTimestampsAndWatermarks(WatermarkStrategy.<Event>forMonotonousTimestamps()
+                        .withTimestampAssigner(new SerializableTimestampAssigner<Event>() {
+                            @Override
+                            public long extractTimestamp(Event element, long recordTimestamp) {
+                                return element.timestamp;
+                            }
+                        }));
+        //需要按照url分组，开滑动窗口统计
+        stream.keyBy(data -> data.url)
+                .window(SlidingEventTimeWindows.of(Time.seconds(10), Time.seconds(5)))
+                //同时传入增量聚合函数和全窗口函数
+                .aggregate(new UrlViewCountAgg(), new UrlViewCountResult())
+                .print();
+        env.execute();
+
+    }
+
+    //自定义增量聚合函数，来一条数据就加一
+    public static class UrlViewCountAgg implements AggregateFunction<Event, Long, Long> {
+
+        @Override
+        public Long createAccumulator() {
+            return 0L;
+        }
+
+        @Override
+        public Long add(Event value, Long accumulator) {
+            return accumulator + 1;
+        }
+
+        @Override
+        public Long getResult(Long accumulator) {
+            return accumulator;
+        }
+
+        @Override
+        public Long merge(Long a, Long b) {
+            return null;
+        }
+    }
+
+    //自定义窗口处理函数，只需要包装窗口信息
+    public static class UrlViewCountResult extends ProcessWindowFunction<Long, UrlViewCount, String, TimeWindow> {
+
+        @Override
+        public void process(String url, ProcessWindowFunction<Long, UrlViewCount, String, TimeWindow>.Context context, Iterable<Long> elements, Collector<UrlViewCount> out) throws Exception {
+            //结合窗口信息，包装输出内容
+            Long start = context.window().getStart();
+            Long end = context.window().getEnd();
+            //迭代器中只有一个元素，就是增量聚合函数的计算结果
+            out.collect(new UrlViewCount(url, elements.iterator().next(), start, end));
+        }
+    }
+}
+```
+
+为了方便处理，单独定义一个POJO类UrlViewCount来表示聚合输出结果的数据类型，包含了url、浏览量以及窗口的起始结束时间。
+
+```java
+public class UrlViewCount {
+    public String url;
+    public Long count;
+    public Long windowStart;
+    public Long windowEnd;
+
+    public UrlViewCount() {
+    }
+
+    public UrlViewCount(String url, Long count, Long windowStart, Long windowEnd) {
+        this.count = count;
+        this.url = url;
+        this.windowStart = windowStart;
+        this.windowEnd = windowEnd;
+    }
+
+    @Override
+    public String toString() {
+        return "UrlViewCount{" +
+                "url='" + url + '\'' +
+                ", count=" + count +
+                ", windowStart=" + new Timestamp(windowStart) +
+                ", windowEnd=" + new Timestamp(windowEnd) +
+                '}';
+    }
+}
+```
+
+代码中用一个AggregateFunction来实现增量聚合，每来一个数据就计数加一；得到的结果交给ProcessWindowFunction，结合窗口信息包装成我们想要的UrlViewCount，最终输出统计结果。
+
+> ProcessWindowFunction是处理函数中的一种，这里只用它来将增量聚合函数的输出结果包裹一层窗口信息。
+
+### 其他API
+
+对于一个窗口算子而言，窗口分配器和窗口函数是必不可少的。除此之外，Flink还提供 了其他一些可选的API，让我们可以更加灵活地控制窗口行为。
+
+#### 触发器（Trigger)
+
+触发器主要是用来控制窗口什么时候触发计算。所谓的“触发计算”，本质上就是执行窗口函数，所以可以认为是计算得到结果并输出的过程。
+
+```java
+stream.keyBy(...)
+	.window(...)
+	.trigger(new MyTrigger())
+```
+
+Trigger是窗口算子的内部属性，每个窗口分配器（WindowAssigner）都会对应一个默认的触发器；对于Flink内置的窗口类型，它们的触发器都已经做了实现。例如，所有事件时间窗口，默认的触发器都是EventTimeTrigger；类似还有ProcessingTimeTrigger和CountTrigger。
+
+```java
+public abstract class Trigger<T, W extends Window> implements Serializable {
+
+    private static final long serialVersionUID = -4104633972991191369L;
+    
+    public abstract TriggerResult onElement(T element, long timestamp, W window, TriggerContext ctx)
+            throws Exception;
+    
+    public abstract TriggerResult onProcessingTime(long time, W window, TriggerContext ctx)
+            throws Exception;
+    
+    public abstract TriggerResult onEventTime(long time, W window, TriggerContext ctx)
+            throws Exception;
+    
+    public boolean canMerge() {
+        return false;
+    }
+    
+    public void onMerge(W window, OnMergeContext ctx) throws Exception {
+        throw new UnsupportedOperationException("This trigger does not support merging.");
+    }
+    
+    public abstract void clear(W window, TriggerContext ctx) throws Exception;
+
+    // ------------------------------------------------------------------------
+
+    /**
+     * A context object that is given to {@link Trigger} methods to allow them to register timer
+     * callbacks and deal with state.
+     */
+    public interface TriggerContext {
+        ...
+    }
+
+    /**
+     * Extension of {@link TriggerContext} that is given to {@link Trigger#onMerge(Window,
+     * OnMergeContext)}.
+     */
+    public interface OnMergeContext extends TriggerContext {
+        <S extends MergingState<?, ?>> void mergePartitionedState(
+                StateDescriptor<S, ?> stateDescriptor);
+    }
+}
+```
+
+Trigger是一个抽象类，自定义时必须实现下面四个抽象方法：
+
+- onElement()：窗口中每到来一个元素，都会调用这个方法。 
+- onEventTime()：当注册的事件时间定时器触发时，将调用这个方法。 
+- onProcessingTime ()：当注册的处理时间定时器触发时，将调用这个方法。 
+- clear()：当窗口关闭销毁时，调用这个方法。一般用来清除自定义的状态。
+
+可以看到，除了clear()比较像生命周期方法，其他三个方法其实都是对某种事件的响应。onElement()是对流中数据元素到来的响应；而另两个则是对时间的响应。这几个方法的参数中都有一个“触发器上下文”（TriggerContext）对象，可以用来注册定时器回调（callback）。这里提到的“定时器”（Timer），其实就是我们设定的一个“闹钟”，代表未来某个时间点会执行的事件；当时间进展到设定的值时，就会执行定义好的操作。很明显，对于时间窗口（TimeWindow）而言，就应该是在窗口的结束时间设定了一个定时器，这样到时间就可以触发窗口的计算输出了。
+
+上面的前三个方法可以响应事件，那它们又是怎样跟窗口操作联系起来的呢？这就需要了解一下它们的返回值。这三个方法返回类型都是TriggerResult，这是一个枚举类型（enum）， 其中定义了对窗口进行操作的四种类型。
+
+- CONTINUE（继续）：什么都不做
+- FIRE（触发）：触发计算，输出结果
+- PURGE（清除）：清空窗口中的所有数据，销毁窗口
+- FIRE_AND_PURGE（触发并清除）：触发计算输出结果，并清除窗口
+
+在日常业务场景中，我们经常会开比较大的窗口来计算每个窗口的pv或者uv等数据。但窗口开的太大，会使我们看到计算结果的时间间隔变长。所以我们可以使用触发器，来隔一段时间触发一次窗口计算。我们在代码中计算了每个url在10秒滚动窗口的pv指标，然后设置了触发器，每隔1秒钟触发一次窗口的计算。
+
+#### 移除器（Evictor）
+
+移除器主要用来定义移除某些数据的逻辑。基于WindowedStream调用.evictor()方法，就可以传入一个自定义的移除器（Evictor）。Evictor是一个接口，不同的窗口类型都有各自预实现的移除器。
+
+```java
+stream
+	.keyBy(...)
+	.window(...)
+	.evictor(new MyEvictor())
+```
+
+Evictor 接口定义了两个方法： 
+
+- evictBefore()：定义执行窗口函数之前的移除数据操作 
+- evictAfter()：定义执行窗口函数之后的移除数据操作
+
+默认情况下，预实现的移除器都是在执行窗口函数（window fucntions）之前移除数据的。
+
+#### 允许延迟（Allowed Lateness）
+
+Flink提供了一个特殊接口，为窗口算子设置一个 “允许的最大延迟”（Allowed Lateness）。也就是说，我们可以设定允许延迟一段时间，在这段时间内，窗口不会销毁，继续到来的数据依然可以进入窗口中并触发计算。直到水位线推进到了窗口结束时间+延迟时间，才真正将窗口的内容清空，正式关闭窗口。
+
+基于WindowedStream调用.allowedLateness()方法，传入一个Time类型的延迟时间，就可以表示允许这段时间内的延迟数据。
+
+```java
+stream
+	.keyBy(...)
+	.window(TumblingEventTimeWindows.of(Time.hours(1)))
+	.allowedLateness(Time.minutes(1))
+```
+
+#### 将迟到的数据放入侧输出流
+
+Flink还提供了另外一种方式处理迟到的数据。可以将未收入窗口的数据，放入“侧输出流”（side output）进行另外的处理，这个流相当于数据流的一个“分支”，单独放置那些错过窗口的数据。
+
+基于WindowedStream调用.sideOutputLateData() 方法，就可以实现这个功能。方法需要传入一个“输出标签”（OutputTag），用来标记分支的迟到数据流。因为保存的就是流中的原始数据，所以OutputTag的类型与流中数据类型相同。
+
+```java
+DataStream<Event> stream = env.addSource(...);
+OutputTag<Event> outputTag = new OutputTag<Event>("late") {};
+stream
+	.keyBy(...)
+	.window(TumblingEventTimeWindows.of(Time.hours(1)))
+	.sideOutputLateData(outputTag)
+```
+
+将迟到数据放入侧输出流之后，还应该可以将它提取出来。基于窗口处理完成之后的DataStream，调用.getSideOutput()方法，传入对应的输出标签，就可以获取到迟到数据所在的 流了。
+
+```java
+SingleOutputStreamOperator<AggResult> winAggStream = stream.keyBy(...)
+    .window(TumblingEventTimeWindows.of(Time.hours(1)))
+    .sideOutputLateData(outputTag)
+    .aggregate(new MyAggregateFunction())
+DataStream<Event> lateStream = winAggStream.getSideOutput(outputTag);
+```
+
+getSideOutput()是SingleOutputStreamOperator的方法，获取到的侧输出流数据类型应该和OutputTag指定的类型一致，与窗口聚合之后流中的数据类型可以不同。
+
+### 窗口的生命周期
+
+#### 窗口的创建
+
+窗口的类型和基本信息由窗口分配器（window assigners）指定，但窗口不会预先创建好，而是由数据驱动创建。当第一个应该属于这个窗口的数据元素到达时，就会创建对应的窗口。
+
+#### 窗口计算的触发
+
+除了窗口分配器，每个窗口还会有自己的窗口函数（window functions）和触发器（trigger）。 窗口函数可以分为增量聚合函数和全窗口函数，主要定义了窗口中计算的逻辑；而触发器则是指定调用窗口函数的条件。
+
+#### 窗口的销毁
+
+一般情况下，当时间达到了结束点，就会直接触发计算输出结果、进而清除状态销毁窗口。这时窗口的销毁可以认为和触发计算是同一时刻。这里需要注意，Flink中只对时间窗口 （TimeWindow）有销毁机制；由于计数窗口（CountWindow）是基于全局窗口（GlobalWindw） 实现的，而全局窗口不会清除状态，所以就不会被销毁。
+
+在特殊的场景下，窗口的销毁和触发计算会有所不同。事件时间语义下，如果设置了允许延迟，那么在水位线到达窗口结束时间时，仍然不会销毁窗口；窗口真正被完全删除的时间点， 是窗口的结束时间加上用户指定的允许延迟时间。
+
+# 处理函数
+
+在处理函数中，我们直面的就是数据流中最基本的元素：数据事件（event）、状态（state） 以及时间（time）。
+
+## 基本处理函数(ProcessFunction)
+
+处理函数提供了一个“定时服务” （TimerService），我们可以通过它访问流中的事件（event）、时间戳（timestamp）、水位线 （watermark），甚至可以注册“定时事件”。而且处理函数继承了AbstractRichFunction抽象类， 所以拥有富函数类的所有特性，同样可以访问状态（state）和其他运行时信息。此外，处理函数还可以直接将数据输出到侧输出流（side output）中。所以，处理函数是最为灵活的处理方法，可以实现各种自定义的业务逻辑；同时也是整个DataStream API的底层基础。
+
+```java
+public class ProcessFunctionExample {
+    public static void main(String[] args) throws Exception{
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        env
+                .addSource(new ClickSource())
+                .assignTimestampsAndWatermarks(WatermarkStrategy.<Event>forMonotonousTimestamps()
+                        .withTimestampAssigner(new SerializableTimestampAssigner<Event>() {
+                            @Override
+                            public long extractTimestamp(Event element, long recordTimestamp) {
+                                return element.timestamp;
+                            }
+                        }))
+                .process(new ProcessFunction<Event, String>() {
+                    @Override
+                    public void processElement(Event value, ProcessFunction<Event, String>.Context ctx, Collector<String> out) throws Exception {
+                        if (value.user.equalsIgnoreCase("Mary")){
+                            out.collect(value.user);
+                        } else if (value.user.equalsIgnoreCase("Bob")) {
+                            out.collect(value.user);
+                            out.collect(value.user);
+                        }
+                        System.out.println(ctx.timerService().currentWatermark());
+                    }
+                })
+                .print();
+        env.execute();
+    }
+}
+```
+
+### ProcessFunction解析
+
+在源码中我们可以看到，抽象类ProcessFunction继承了AbstractRichFunction，有两个泛型类型参数：I表示Input，也就是输入的数据类型；O表示Output，也就是处理完成之后输出的数据类型。
+
+内部单独定义了两个方法：一个是必须要实现的抽象方法.processElement()；另一个是非抽象方法.onTimer()。
+
+```java
+public abstract class ProcessFunction<I, O> extends AbstractRichFunction {
+
+    private static final long serialVersionUID = 1L;
+
+    public abstract void processElement(I value, Context ctx, Collector<O> out) throws Exception;
+
+    public void onTimer(long timestamp, OnTimerContext ctx, Collector<O> out) throws Exception {}
+
+    public abstract class Context {
+
+        public abstract Long timestamp();
+
+        public abstract TimerService timerService();
+
+        public abstract <X> void output(OutputTag<X> outputTag, X value);
+    }
+
+    public abstract class OnTimerContext extends Context {
+        public abstract TimeDomain timeDomain();
+    }
+}
+```
+
+#### 抽象方法.processElement()
+
+用于“处理元素”，定义了处理的核心逻辑。这个方法对于流中的每个元素都会调用一次，参数包括三个：输入数据值value，上下文ctx，以及“收集器”（Collector）out。方法没有返回值，处理之后的输出数据是通过收集器out来定义的。
+
+- value：当前流中的输入元素，也就是正在处理的数据，类型与流中数据类型一致。
+- ctx：类型是ProcessFunction中定义的内部抽象类Context，表示当前运行的上下文，可以获取到当前的时间戳，并提供了用于查询时间和注册定时器的“定时服务”(TimerService)，以及可以将数据发送到“侧输出流”（side output）的方法.output()。
+- out：“收集器”（类型为 Collector），用于返回输出数据。使用方式与flatMap算子中的收集器完全一样，直接调用out.collect()方法就可以向下游发出一个数据。这个方法可以多次调用，也可以不调用。
+
+#### 非抽象方法.onTimer()
+
+用于定义定时触发的操作，这是一个非常强大、也非常有趣的功能。这个方法只有在注册好的定时器触发的时候才会调用，而定时器是通过“定时服务”TimerService 来注册的。打个比方，注册定时器（timer）就是设了一个闹钟，到了设定时间就会响；而.onTimer()中定义的，就是闹钟响的时候要做的事。所以它本质上是一个基于时间的“回调”（callback）方法，通过时间的进展来触发；在事件时间语义下就是由水位线（watermark）来触发了。
+
+与.processElement()类似，定时方法.onTimer()也有三个参数：时间戳（timestamp），上下文（ctx），以及收集器（out）。这里的timestamp是指设定好的触发时间，事件时间语义下当然就是水位线了。另外这里同样有上下文和收集器，所以也可以调用定时服务（TimerService），以及任意输出处理之后的数据。
+
+需要注意的是，上面的.onTimer()方法只是定时器触发时的操作，而定时器（timer）真正的设置需要用到上下文ctx中的定时服务。在Flink中，只有“按键分区流”KeyedStream才支持设置定时器的操作。
+
+### 处理函数的分类
+
+Flink 提供了 8 个不同的处理函数：
+
+- ProcessFunction：最基本的处理函数，基于DataStream直接调用.process()时作为参数传入。
+- KeyedProcessFunction：对流按键分区后的处理函数，基于KeyedStream调用.process()时作为参数传入。要想使用定时器，必须基于KeyedStream。
+- ProcessWindowFunction：开窗之后的处理函数，也是全窗口函数的代表。基于WindowedStream调用.process()时作为参数传入。
+- ProcessAllWindowFunction：同样是开窗之后的处理函数，基于AllWindowedStream调用.process()时作为参数传入。 
+- CoProcessFunction：合并（connect）两条流之后的处理函数，基于ConnectedStreams调用.process()时作为参数传入。
+- ProcessJoinFunction：间隔连接（interval join）两条流之后的处理函数，基于IntervalJoined调用.process()时作为参数传入。
+- BroadcastProcessFunction：广播连接流处理函数，基于BroadcastConnectedStream调用.process()时作为参数传入。这里的“广播连接流”BroadcastConnectedStream，是一个未keyBy的普通DataStream与一个广播流（BroadcastStream）做连接（conncet）之后的产物。
+- KeyedBroadcastProcessFunction：按键分区的广播连接流处理函数，同样是基于BroadcastConnectedStream调用.process()时作为参数传入。与BroadcastProcessFunction不同的是，这时的广播连接流，是一个KeyedStream与广播流（BroadcastStream）做连接之后的产物。
+
+## 按键分区处理函数（KeyedProcessFunction）
+
+### 定时器（Timer）和定时服务（TimeService）
+
+KeyedProcessFunction的一个特色，就是可以灵活地使用定时器。
+
+定时器（timers）是处理函数中进行时间相关操作的主要机制。在.onTimer()方法中可以实现定时处理的逻辑，而它能触发的前提，就是之前曾经注册过定时器、并且现在已经到了触发时间。注册定时器的功能，是通过上下文中提供的“定时服务”（TimerService）来实现的。
+
+TimerService 是Flink关于时间和定时器的基础服务接口
+
+```java
+public interface TimerService {
+
+    String UNSUPPORTED_REGISTER_TIMER_MSG = "Setting timers is only supported on a keyed streams.";
+
+    String UNSUPPORTED_DELETE_TIMER_MSG = "Deleting timers is only supported on a keyed streams.";
+	//获取当前处理时间
+    long currentProcessingTime();
+	//获取当前水位线（事件时间）
+    long currentWatermark();
+	//注册处理时间定时器，当处理时间超过time时触发
+    void registerProcessingTimeTimer(long time);
+	//注册事件时间定时器，当处理时间超过time时触发
+    void registerEventTimeTimer(long time);
+	//删除触发时间为time的处理时间定时器
+    void deleteProcessingTimeTimer(long time);
+	//删除触发时间为time的事件时间定时器
+    void deleteEventTimeTimer(long time);
+}
+```
+
+对于相同的key和时间戳，最多只有一个定时器，如果注册了多次，onTimer()方法也将只被调用一次。
+
+Flink的定时器同样具有容错性，它和状态一起都会被保存到一致性检查点（checkpoint） 中。当发生故障时，Flink会重启并读取检查点中的状态，恢复定时器。如果是处理时间的定时器，有可能会出现已经“过期”的情况，这时它们会在重启时被立刻触发。
+
+### KeyedProcessFunction的使用
+
+使用处理时间定时器的具体示例：
+
+```java
+public class ProcessingTimeTimerExample {
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        //处理时间语义，不需要分配时间戳和watermark
+        DataStreamSource<Event> stream = env.addSource(new ClickSource());
+        //要用定时器，必须基于KeyedStream
+        stream.keyBy(data -> true)
+                .process(new KeyedProcessFunction<Boolean, Event, String>() {
+                    @Override
+                    public void processElement(Event value, KeyedProcessFunction<Boolean, Event, String>.Context ctx, Collector<String> out) throws Exception {
+                        long currTs = ctx.timerService().currentProcessingTime();
+                        out.collect("数据到达，到达时间：" + new Timestamp(currTs));
+                        //注册一个10秒后的定时器
+                        ctx.timerService().registerProcessingTimeTimer(currTs + 10 * 1000L);
+                    }
+
+                    @Override
+                    public void onTimer(long timestamp, KeyedProcessFunction<Boolean, Event, String>.OnTimerContext ctx, Collector<String> out) throws Exception {
+                        out.collect("定时器触发，触发时间：" + new Timestamp(timestamp));
+                    }
+                })
+                .print();
+        env.execute();
+    }
+}
+```
+
+事件时间语义：
+
+```java
+public class EventTimeTimerExample {
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        SingleOutputStreamOperator<Event> stream = env
+                .addSource(new CustomSource())
+                .assignTimestampsAndWatermarks(WatermarkStrategy.<Event>forMonotonousTimestamps()
+                        .withTimestampAssigner(new SerializableTimestampAssigner<Event>() {
+                            @Override
+                            public long extractTimestamp(Event element, long recordTimestamp) {
+                                return element.timestamp;
+                            }
+                        }));
+        //基于KeyedStream定义事件时间定时器
+        stream
+                .keyBy(data -> true)
+                .process(new KeyedProcessFunction<Boolean, Event, String>() {
+                    @Override
+                    public void processElement(Event value, KeyedProcessFunction<Boolean, Event, String>.Context ctx, Collector<String> out) throws Exception {
+                        out.collect("数据到达，时间戳为：" + ctx.timestamp());
+                        out.collect("数据到达，水位线为：" + ctx.timerService().currentWatermark() + "\n---------分割线---------");
+                        //注册一个10秒后的定时器
+                        ctx.timerService().registerEventTimeTimer(ctx.timestamp() + 10 * 1000L);
+                    }
+
+                    @Override
+                    public void onTimer(long timestamp, KeyedProcessFunction<Boolean, Event, String>.OnTimerContext ctx, Collector<String> out) throws Exception {
+                        out.collect("定时器触发，触发时间:" + timestamp);
+                    }
+                })
+                .print();
+        env.execute();
+    }
+
+    // 自定义测试数据源
+    public static class CustomSource implements SourceFunction<Event> {
+        @Override
+        public void run(SourceContext<Event> ctx) throws Exception {
+            // 直接发出测试数据
+            ctx.collect(new Event("Mary", "./home", 1000L));
+            // 为了更加明显，中间停顿 5 秒钟
+            Thread.sleep(5000L);
+            // 发出 10 秒后的数据
+            ctx.collect(new Event("Mary", "./home", 11000L));
+            Thread.sleep(5000L);
+            // 发出 10 秒+1ms 后的数据
+            ctx.collect(new Event("Alice", "./cart", 11001L));
+            Thread.sleep(5000L);
+        }
+
+        @Override
+        public void cancel() {
+        }
+    }
+}
+```
+
+事件时间语义下，定时器触发的条件就是水位线推进到设定的时间。第一条数据到来后，设定的定时器时间为1000 + 10 * 1000 = 11000；而当时间戳为11000的第二条数据到来，水位线还处在999的位置，当然不会立即触发定时器；而之后水位线会推进到10999，同样是无法触发定时器的。必须等到第三条数据到来，将水位线真正推进到11000，就可以触发第一个定时器了。第三条数据发出后再过5秒，没有更多的数据生成了，整个程序运行结束将要退出，此时Flink会自动将水位线推进到长整型的最大值 （Long.MAX_VALUE）。于是所有尚未触发的定时器这时就统一触发了，我们就在控制台看到了后两个定时器的触发信息。
+
+![image-20221018221524951](Flink.assets/image-20221018221524951.png)
 
 
 
