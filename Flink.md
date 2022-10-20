@@ -3684,7 +3684,261 @@ DataStream<String> output = stream
 
 BroadcastProcessFunction与CoProcessFunction类似，同样是一个抽象类，需要实现两个方法，针对合并的两条流中元素分别定义处理操作。区别在于这里一条流是正常处理数据，而另一条流则是要用新规则来更新广播状态，所以对应的两个方法叫作.processElement() 和.processBroadcastElement()。
 
-## 基于时间的合流
+## 基于时间的合流——双流联结（Join）
+
+对于两条流的合并，很多情况我们并不是简单地将所有数据放在一起，而是希望根据某个字段的值将它们联结起来，“配对”去做处理。例如用传感器监控火情时，我们需要将大量温度传感器和烟雾传感器采集到的信息，按照传感器ID分组、再将两条流中数据合并起来，如果同时超过设定阈值就要报警。
+
+我们发现，这种需求与关系型数据库中表的join操作非常相近。事实上，Flink中两条流的connect操作，就可以通过keyBy指定键进行分组后合并，实现了类似于SQL中的join操作；另外connect支持处理函数，可以使用自定义状态和TimerService灵活实现各种需求，其实已经能够处理双流合并的大多数场景。 
+
+不过处理函数是底层接口，所以尽管connect能做的事情多，但在一些具体应用场景下还是显得太过抽象了。比如，如果我们希望统计固定时间内两条流数据的匹配情况，那就需要设置定时器、自定义触发逻辑来实现——其实这完全可以用窗口（window）来表示。为了更方便地实现基于时间的合流操作，Flink的DataStrema API提供了两种内置的join算子，以及coGroup算子。
+
+### 窗口联结（Window Join）
+
+Flink提供了一个窗口联结（window join）算子，可以定义时间窗口，并将两条流中共享一个公共键（key）的数据放在窗口中进行配对处理，实现将两条流的数据进行合并、且同样针对某段时间进行处理和统计。
+
+#### 窗口联结的调用
+
+窗口联结在代码中的实现，首先需要调用DataStream的.join()方法来合并两条流，得到一 个 JoinedStreams；接着通过.where()和.equalTo()方法指定两条流中联结的key；然后通 过.window()开窗口，并调用.apply()传入联结窗口函数进行处理计算。通用调用形式如下：
+
+```java
+stream1.join(stream2)
+	.where(<KeySelector>)
+	.equalTo(<KeySelector>)
+	.window(<WindowAssigner>)
+	.apply(<JoinFunction>)
+```
+
+调用.apply()可以看作实现了一个特殊的窗口函数。注意这里只能调用.apply()，没有其他替代的方法。 传入的JoinFunction也是一个函数类接口，使用时需要实现内部的.join()方法。这个方法 有两个参数，分别表示两条流中成对匹配的数据。
+
+```java
+public interface JoinFunction<IN1, IN2, OUT> extends Function, Serializable {
+	OUT join(IN1 first, IN2 second) throws Exception;
+}
+```
+
+#### 窗口联结的处理流程
+
+两条流的数据到来之后，首先会按照key分组、进入对应的窗口中存储；当到达窗口结束时间时，算子会先统计出窗口内两条流的数据的所有组合，也就是对两条流中的数据做一个笛卡尔积（相当于表的交叉连接，cross join），然后进行遍历，把每一对匹配的数据，作为参数 (first，second)传入JoinFunction的.join()方法进行计算处理，得到的结果直接输出。所以窗口中每有一对数据成功联结匹配，JoinFunction的.join()方法就会被调用一次，并输出一个结果。
+
+![image-20221020110301397](Flink.assets/image-20221020110301397.png)
+
+除了JoinFunction，在.apply()方法中还可以传入FlatJoinFunction，用法非常类似，只是内部需要实现的.join()方法没有返回值。结果的输出是通过收集器（Collector）来实现的，所以对于一对匹配数据可以输出任意条结果。
+
+#### 窗口联结实例
+
+在电商网站中，往往需要统计用户不同行为之间的转化，这就需要对不同的行为数据流， 按照用户ID进行分组后再合并，以分析它们之间的关联。如果这些是以固定时间周期（比如1小时）来统计的，那我们就可以使用窗口join来实现这样的需求。
+
+```java
+public class WindowJoinExample {
+    public static void main(String[] args) throws Exception{
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        SingleOutputStreamOperator<Tuple2<String, Long>> stream1 = env.fromElements(
+                Tuple2.of("a", 1000L),
+                Tuple2.of("b", 1000L),
+                Tuple2.of("a", 2000L),
+                Tuple2.of("b", 2000L)
+        ).assignTimestampsAndWatermarks(WatermarkStrategy.<Tuple2<String, Long>>forMonotonousTimestamps()
+                .withTimestampAssigner(new SerializableTimestampAssigner<Tuple2<String, Long>>() {
+                    @Override
+                    public long extractTimestamp(Tuple2<String, Long> element, long recordTimestamp) {
+                        return element.f1;
+                    }
+                }));
+        SingleOutputStreamOperator<Tuple2<String, Long>> stream2 = env.fromElements(
+                Tuple2.of("a", 3000L),
+                Tuple2.of("b", 3000L),
+                Tuple2.of("a", 4000L),
+                Tuple2.of("b", 4000L)
+        ).assignTimestampsAndWatermarks(WatermarkStrategy.<Tuple2<String, Long>>forMonotonousTimestamps()
+                .withTimestampAssigner(new SerializableTimestampAssigner<Tuple2<String, Long>>() {
+                    @Override
+                    public long extractTimestamp(Tuple2<String, Long> element, long recordTimestamp) {
+                        return element.f1;
+                    }
+                }));
+        stream1
+                .join(stream2)
+                .where(r->r.f0)
+                .equalTo(r-> r.f0)
+                .window(TumblingEventTimeWindows.of(Time.seconds(5)))
+                .apply(new JoinFunction<Tuple2<String, Long>, Tuple2<String, Long>, String>() {
+                    @Override
+                    public String join(Tuple2<String, Long> first, Tuple2<String, Long> second) throws Exception {
+                        return first+"=>"+second;
+                    }
+                })
+                .print();
+        env.execute();
+    }
+}
+```
+
+![image-20221020122305489](Flink.assets/image-20221020122305489.png)
+
+可以看到，窗口的联结是笛卡尔积。
+
+### 间隔联结（Interval Join）
+
+Flink提供了一种叫作“间隔联结”（interval join）的合流操作。顾名思义，间隔联结的思路就是针对一条流的每个数据，开辟出其时间戳前后的一段时间间隔， 看这期间是否有来自另一条流的数据匹配。
+
+#### 间隔联结的原理
+
+间隔联结具体的定义方式是，我们给定两个时间点，分别叫作间隔的“上界”（upperBound） 和“下界”（lowerBound）；于是对于一条流（不妨叫作 A）中的任意一个数据元素a，就可以开辟一段时间间隔：[a.timestamp + lowerBound, a.timestamp + upperBound]，即以a的时间戳为 中心，下至下界点、上至上界点的一个闭区间：我们就把这段时间作为可以匹配另一条流数据的“窗口”范围。所以对于另一条流（不妨叫 B）中的数据元素b，如果它的时间戳落在了这个区间范围内，a和b就可以成功配对，进而进行计算输出结果。
+
+所以匹配的条件为：a.timestamp + lowerBound <= b.timestamp <= a.timestamp + upperBound 
+
+这里需要注意，做间隔联结的两条流A和B，也必须基于相同的key；下界lowerBound应该小于等于上界upperBound，两者都可正可负；间隔联结目前只支持事件时间语义。
+
+![image-20221020122845292](Flink.assets/image-20221020122845292.png)
+
+间隔联结同样是一种内连接（inner join）。与窗口联结不同的是，interval  join做匹配的时间段是基于流中数据的，所以并不确定；而且流B中的数据可以不只在一个区间内被匹配。
+
+#### 间隔联结的调用
+
+间隔联结在代码中，是基于KeyedStream的联结（join）操作。DataStream在keyBy得到KeyedStream之后，可以调用.intervalJoin()来合并两条流，传入的参数同样是一个KeyedStream， 两者的key类型应该一致；得到的是一个IntervalJoin类型。后续的操作同样是完全固定的： 先通过.between()方法指定间隔的上下界，再调用.process()方法，定义对匹配数据对的处理操作。调用.process()需要传入一个处理函数，这是处理函数家族的最后一员：“处理联结函数”ProcessJoinFunction。
+
+```
+stream1
+	.keyBy(<KeySelector>)
+	.intervalJoin(stream2.keyBy(<KeySelector>))
+	.between(Time.milliseconds(-2), Time.milliseconds(1))
+	.process (new ProcessJoinFunction<Integer, Integer, String(){
+        @Override
+        public void processElement(Integer left, Integer right, Context ctx, Collector<String> out) {
+        out.collect(left + "," + right);
+        }
+	});
+```
+
+抽象类ProcessJoinFunction就像是ProcessFunction和JoinFunction的结合，内部同样有一个抽象方法.processElement()。与其他处理函数不同的是，它多了一个参数，这自然是因为有来自两条流的数据。参数中left指的就是第一条流中的数据，right则是第二条流中 与它匹配的数据。每当检测到一组匹配，就会调用这里的.processElement()方法，经处理转换之后输出结果。
+
+#### 间隔联结实例
+
+在电商网站中，某些用户行为往往会有短时间内的强关联。我们这里举一个例子，我们有两条流，一条是下订单的流，一条是浏览数据的流。我们可以针对同一个用户，来做这样一个联结。也就是使用一个用户的下订单的事件和这个用户的最近十分钟的浏览数据进行一个联结查询。
+
+```java
+public class IntervalJoinExample {
+    public static void main(String[] args) throws Exception{
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        SingleOutputStreamOperator<Tuple3<String, String, Long>> orderStream = env.fromElements(
+                Tuple3.of("Mary", "order-1", 5000L),
+                Tuple3.of("Alice", "order-2", 5000L),
+                Tuple3.of("Bob", "order-3", 20000L),
+                Tuple3.of("Alice", "order-4", 20000L),
+                Tuple3.of("Cary", "order-5", 51000L)
+        ).assignTimestampsAndWatermarks(WatermarkStrategy.<Tuple3<String, String, Long>>forMonotonousTimestamps()
+                .withTimestampAssigner(new SerializableTimestampAssigner<Tuple3<String, String, Long>>() {
+                    @Override
+                    public long extractTimestamp(Tuple3<String, String, Long> element, long recordTimestamp) {
+                        return element.f2;
+                    }
+                }));
+        SingleOutputStreamOperator<Event> clickStream = env.fromElements(
+                new Event("Bob", "./cart", 2000L),
+                new Event("Alice", "./prod?id=100", 3000L),
+                new Event("Alice", "./prod?id=200", 3500L),
+                new Event("Bob", "./prod?id=2", 2500L),
+                new Event("Alice", "./prod?id=300", 36000L),
+                new Event("Bob", "./home", 30000L),
+                new Event("Bob", "./prod?id=1", 23000L),
+                new Event("Bob", "./prod?id=3", 33000L)
+        ).assignTimestampsAndWatermarks(WatermarkStrategy.<Event>forMonotonousTimestamps()
+                .withTimestampAssigner(new SerializableTimestampAssigner<Event>() {
+                    @Override
+                    public long extractTimestamp(Event element, long recordTimestamp) {
+                        return element.timestamp;
+                    }
+                }));
+        orderStream.keyBy(data->data.f0)
+                .intervalJoin(clickStream.keyBy(data-> data.user))
+                .between(Time.seconds(-5),Time.seconds(10))
+                .process(new ProcessJoinFunction<Tuple3<String, String, Long>, Event, String>() {
+                    @Override
+                    public void processElement(Tuple3<String, String, Long> left, Event right, ProcessJoinFunction<Tuple3<String, String, Long>, Event, String>.Context ctx, Collector<String> out) throws Exception {
+                        out.collect(right+"=>"+left);
+                    }
+                })
+                .print();
+        env.execute();
+    }
+}
+```
+
+![image-20221020124113409](Flink.assets/image-20221020124113409.png)
+
+### 窗口同组联结（Window CoGroup）
+
+除窗口联结和间隔联结之外，Flink还提供了一个“窗口同组联结”（window coGroup）操作。它的用法跟window join非常类似，也是将两条流合并之后开窗处理匹配的元素，调用时只需要将.join()换为.coGroup()就可以了。
+
+```java
+stream1.coGroup(stream2)
+	.where(<KeySelector>)
+	.equalTo(<KeySelector>)
+	.window(TumblingEventTimeWindows.of(Time.hours(1)))
+	.apply(<CoGroupFunction>)
+```
+
+与window join的区别在于，调用.apply()方法定义具体操作时，传入的是一个CoGroupFunction。
+
+```java
+public interface CoGroupFunction<IN1, IN2, O> extends Function, Serializable {
+    void coGroup(Iterable<IN1> first, Iterable<IN2> second, Collector<O> out) throws Exception;
+}
+```
+
+内部的.coGroup()方法，有些类似于FlatJoinFunction中.join()的形式，同样有三个参数，分别代表两条流中的数据以及用于输出的收集器（Collector）。不同的是，这里的前两个参数不再是单独的每一组“配对”数据了，而是传入了可遍历的数据集合。也就是说，现在不会再去计算窗口中两条流数据集的笛卡尔积，而是直接把收集到的所有数据一次性传入，至于要怎样配对完全是自定义的。这样.coGroup()方法只会被调用一次，而且即使一条流的数据没有任何另一条流的数据匹配，也可以出现在集合中、当然也可以定义输出结果了。 
+
+所以能够看出，coGroup操作比窗口的join更加通用，不仅可以实现类似SQL中的“内连接”（inner join），也可以实现左外连接（left outer join）、右外连接（right outer join）和全外连接（full outer join）。事实上，窗口join的底层，也是通过coGroup来实现的。
+
+```java
+public class CoGroupExample {
+    public static void main(String[] args) throws Exception{
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        SingleOutputStreamOperator<Tuple2<String, Long>> stream1 = env.fromElements(
+                Tuple2.of("a", 1000L),
+                Tuple2.of("b", 1000L),
+                Tuple2.of("a", 2000L),
+                Tuple2.of("b", 2000L)
+        ).assignTimestampsAndWatermarks(WatermarkStrategy.<Tuple2<String, Long>>forMonotonousTimestamps()
+                .withTimestampAssigner(new SerializableTimestampAssigner<Tuple2<String, Long>>() {
+                    @Override
+                    public long extractTimestamp(Tuple2<String, Long> element, long recordTimestamp) {
+                        return element.f1;
+                    }
+                }));
+        SingleOutputStreamOperator<Tuple2<String, Long>> stream2 = env.fromElements(
+                Tuple2.of("a", 3000L),
+                Tuple2.of("b", 3000L),
+                Tuple2.of("a", 4000L),
+                Tuple2.of("b", 4000L)
+        ).assignTimestampsAndWatermarks(WatermarkStrategy.<Tuple2<String, Long>>forMonotonousTimestamps()
+                .withTimestampAssigner(new SerializableTimestampAssigner<Tuple2<String, Long>>() {
+                    @Override
+                    public long extractTimestamp(Tuple2<String, Long> element, long recordTimestamp) {
+                        return element.f1;
+                    }
+                }));
+        stream1
+                .coGroup(stream2)
+                .where(r->r.f0)
+                .equalTo(r->r.f0)
+                .window(TumblingEventTimeWindows.of(Time.seconds(5)))
+                .apply(new CoGroupFunction<Tuple2<String, Long>, Tuple2<String, Long>, String>() {
+                    @Override
+                    public void coGroup(Iterable<Tuple2<String, Long>> first, Iterable<Tuple2<String, Long>> second, Collector<String> out) throws Exception {
+                        out.collect(first+"=>"+second);
+                    }
+                })
+                .print();
+        env.execute();
+    }
+}
+```
+
+![image-20221020131050468](Flink.assets/image-20221020131050468.png)
 
 
 
