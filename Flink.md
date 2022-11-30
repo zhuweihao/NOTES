@@ -3698,7 +3698,7 @@ Flink提供了一个窗口联结（window join）算子，可以定义时间窗�
 
 #### 窗口联结的调用
 
-窗口联结在代码中的实现，首先需要调用DataStream的.join()方法来合并两条流，得到一 个 JoinedStreams；接着通过.where()和.equalTo()方法指定两条流中联结的key；然后通 过.window()开窗口，并调用.apply()传入联结窗口函数进行处理计算。通用调用形式如下：
+窗口联结在代码中的实现，首先需要调用DataStream的.join()方法来合并两条流，得到一 个 JoinedStreams；接着通过.where()和.equalTo()方法指定两条流中联结的key；然后通过.window()开窗口，并调用.apply()传入联结窗口函数进行处理计算。通用调用形式如下：
 
 ```java
 stream1.join(stream2)

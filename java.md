@@ -1,7 +1,7 @@
 # JDK选型、安装与配置
 
 ## JAVA抽象层
-![image-20220119215300941](https://s2.loli.net/2022/01/19/W9XatgJvz5ujbiB.png)
+![image-20220119215300941](java.assets/W9XatgJvz5ujbiB.png)
 
 ### JVM（JAVA虚拟机）
 
