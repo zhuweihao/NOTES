@@ -3708,7 +3708,7 @@ stream1.join(stream2)
 	.apply(<JoinFunction>)
 ```
 
-调用.apply()可以看作实现了一个特殊的窗口函数。注意这里只能调用.apply()，没有其他替代的方法。 传入的JoinFunction也是一个函数类接口，使用时需要实现内部的.join()方法。这个方法 有两个参数，分别表示两条流中成对匹配的数据。
+调用.apply()可以看作实现了一个特殊的窗口函数。注意这里只能调用.apply()，没有其他替代的方法。 传入的JoinFunction也是一个函数类接口，使用时需要实现内部的.join()方法。这个方法有两个参数，分别表示两条流中成对匹配的数据。
 
 ```java
 public interface JoinFunction<IN1, IN2, OUT> extends Function, Serializable {
