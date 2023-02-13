@@ -62,3 +62,16 @@ On 'Update' ations和On frame deactivation最好按照如图示修改，这样�
 
 # Servlet
 
+## 入门
+
+1. 新建项目-新建模块
+2. 在模块中添加web application
+3. 创建artifact - 部署包
+4. lib - artifact 
+   - 先有artifact，后来才添加的mysql驱动jar包，此时，这个jar包没有添加到部署包中，有两种解决方案
+     - 在Project Structure中Problems会有提示，点击fix选择add to
+     - 可以直接将lib文件夹放在WEB-INF下，但是这样只能当前一个模块独享
+5. 在部署的时候，修改application Context。然后再回到server选项卡，检查URL的值。URL的值指的是tomcat启动完成后自动打开指定浏览器的默认访问地址。
+   - 如果我们的URL是https://localhost:8080/test/，那么我们访问的是index.html，如果没有这个页面则会报404
+6. 405问题。当前请求的方法不支持。比如，表单中method=post，servlet必须对应doPost，否则报405错误。
+7. 注意<url-pattern>中以斜杠开头。
