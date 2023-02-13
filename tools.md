@@ -1,8 +1,8 @@
 # Git
 
-![image-20220117191604376](https://s2.loli.net/2022/01/17/BIY4FcPDt1NjbeH.png)
+![image-20220117191604376](tools.assets/BIY4FcPDt1NjbeH.png)
 
-![image-20220117192059567](https://s2.loli.net/2022/01/17/cJnTzO5WNxbf6p8.png)
+![image-20220117192059567](tools.assets/cJnTzO5WNxbf6p8.png)
 
 ---
 
