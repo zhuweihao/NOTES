@@ -90,7 +90,7 @@ JDK 1.5的时候出现有enum关键字，用于枚举定义上;
 
 而本次讨论的主要是基本数据类型，这里不牵扯到复杂的内存关系的匹配操作。每一种数据类型都有每一种类型保存的数据范围
 
-![image-20220117123159277](https://s2.loli.net/2022/01/17/o8a2Wunm3hiG9pB.png)
+![image-20220117123159277](java.assets/o8a2Wunm3hiG9pB.png)
 
 不同的类型保存有不同范围的数据，但是这里面实际上就牵扯到了数据类型的选择上，这里给出一些使用原则：
 
@@ -402,7 +402,7 @@ public class JavaDemo {
 
 首先对于程序开发而言，里面会提供有大量的基础运算符，那么这些运算符也都会提供有各自的优先顺序。
 
-![image-20220119203000600](https://s2.loli.net/2022/01/19/7RAbQ6wU93jTVpY.png)
+![image-20220119203000600](java.assets/7RAbQ6wU93jTVpY.png)
 
 关键性的问题是，对于程序的开发而言，不建议编写很复杂的计算。
 
@@ -886,7 +886,7 @@ public class JavaDemo {
 - 堆内存：保存的是对象的具体信息，在程序之中堆内存空间的开辟是通过new完成的。
 - 栈内存：保存的是一块堆内存的地址，
 
-![image-20220315203219856](https://s2.loli.net/2022/03/15/LWRmKceShuzVdw2.png)
+![image-20220315203219856](java.assets/LWRmKceShuzVdw2.png)
 
 如果只是声明了对象，但是没有为对象进行实例化，如果此时调用其成员属性或方法，则会抛出错误NullPointerException（空指向异常），就是没有开辟堆内存产生的问题，而且只有引用数据类型存在此类问题。
 
@@ -2960,7 +2960,7 @@ public class JavaDemo {
 
 #### 异常处理流程
 
-![image-20220321234144195](https://s2.loli.net/2022/03/21/xuIgLpG6Yloi3Mq.png)
+![image-20220321234144195](java.assets/xuIgLpG6Yloi3Mq.png)
 
 #### throws关键字
 
@@ -3765,7 +3765,7 @@ public class ThreadDemo {
 
 在 Java 程序执行的过程之中考虑到对于不同层次开发者的需求，所以其支持有本地的操作系统函数调用，而这项技术就被称为 JNI（Java Native Inteface）技术，但是 Java 开发过程之中并不推荐这样使用，利用这项技术可以使用一些操作系统提供底层函数进行一些特殊的处理，而在 Thread 类里面提供的 start0()就表示需要将此方法依赖于不同的操作系统实现。
 
-![image-20220524102841043](https://s2.loli.net/2022/05/24/VGdS3r4q27beQW1.png)
+![image-20220524102841043](java.assets/VGdS3r4q27beQW1.png)
 
 任何情况下，只要定义了多线程，多线程的启动永远只有一种方案:Thread 类中的start()方法。
 
@@ -3865,7 +3865,7 @@ hread 类的定义:public class **Thread** extends [Object](https://docs.oracle.
 
 发现现在 Thread 类也是 Runnable接口的子类，那么在之前继承 Thread 类的时候实际上覆写的还是 Runnable 接口的 run() 方法
 
-![image-20220524111117708](https://s2.loli.net/2022/05/24/XSI8tU4PJ5myLrR.png)
+![image-20220524111117708](java.assets/XSI8tU4PJ5myLrR.png)
 
 在进行 Thread 启动多线程的时候调用的是 start() 方法，而后找到的是 run()方法。
 
@@ -3873,7 +3873,7 @@ hread 类的定义:public class **Thread** extends [Object](https://docs.oracle.
 
 多线程开发的本质实质上是在于多个线程可以进行同一资源的抢占，那么 Thread 主要描述的是线程,而资源的描述是通过 Runnable 完成的。
 
-![image-20220524111746454](https://s2.loli.net/2022/05/24/YOh4QxPFWv2UMtG.png)
+![image-20220524111746454](java.assets/YOh4QxPFWv2UMtG.png)
 
 - 卖票程序来实现多个进程的资源并发访问
 
@@ -3901,7 +3901,7 @@ public class ThreadDemo {
 }
 ```
 
-![image-20220524113005637](https://s2.loli.net/2022/05/24/zI6n9ySN3fq2Hpw.png)
+![image-20220524113005637](java.assets/zI6n9ySN3fq2Hpw.png)
 
 #### Callable实现多线程
 
@@ -3924,7 +3924,7 @@ public interface Callable<V> {
 
 可以发现 Callable 定义的时候可以设置一个泛型，此泛型的类型就是返回数据的类型，这样的好处是可以避免向下转型所带来的安全隐患。
 
-![](https://s2.loli.net/2022/05/24/l5GqiCRr879FBdY.png)
+![](java.assets/l5GqiCRr879FBdY.png)
 
 ```java
 class MyThread implements Callable<String> {
@@ -3958,7 +3958,7 @@ Runnable与Callable的区别
 
 定义线程主体类，而后通过Thread类进行线程，但是并不意味着你调用了start()方法，线程就已经开始运行了，因为整体的线程处理有自己的一套运行的状态。
 
-![](https://s2.loli.net/2022/05/24/vQMhepF3yZJHoU7.png)
+![](java.assets/vQMhepF3yZJHoU7.png)
 
 - 任何一个线程的对象都应该使用Thread类进行封装，所以线程的启动使用的是start（），但是启动的时候实际上若干个线程都将进入到一种就绪状态，现在并没有执行；
 - 进入到就绪状态之后就需要等待进行资源的调度，当某一个线程调度成功之后进入到运行状态（run（）方法），但是所有的线程不可能一直持续执行下去，中间需要产生一些暂停的状态，例如：某个线程执行一段时间之后就需要让出资源；而后这个线程就进入到阻塞状态随后重新回归到就绪状态；
@@ -4105,7 +4105,7 @@ public class ThreadDemo {
 }
 ```
 
-![](https://s2.loli.net/2022/05/24/voXR2hpAt9BwaTH.png)
+![](java.assets/voXR2hpAt9BwaTH.png)
 
 #### 线程中断
 
@@ -4302,7 +4302,7 @@ public class ThreadDemo {
 
 通过程序的结果可以看出上述程序存在数据同步的问题
 
-![](https://s2.loli.net/2022/05/24/UxP6yS19Wsbnojd.png)
+![](java.assets/UxP6yS19Wsbnojd.png)
 
 #### 线程同步处理
 
@@ -4310,7 +4310,7 @@ public class ThreadDemo {
 
 同步就是指多个操作在同一个时间段内只能有一个线程进行，其他线程要等待此线程完成之后才可以继续执行。
 
-![](https://s2.loli.net/2022/05/24/YAb3pZKF9Wkh4R1.png)
+![](java.assets/YAb3pZKF9Wkh4R1.png)
 
 如果要想在程序之中实现这把锁的功能，就可以使用synchronized关键字来实现，利用此关键字可以定义同步方法或同步代码块，在同步代码块的操作里面的代码只允许一个线程执行。
 
@@ -4422,7 +4422,7 @@ public class ThreadDemo {
 
 可以将生产者与消费者定义为两个独立的线程类对象， 既然生产者与消费者是两个独立的线程，那么这两个独立的线程之间就需要有一个数据的保存集中点，那么可以单独定义一个 Message 类实现数据的保存。
 
-![](https://s2.loli.net/2022/05/24/6bvR1jM39d5FWz8.png)
+![](java.assets/6bvR1jM39d5FWz8.png)
 
 ```java
 class Producer implements Runnable {
@@ -4706,7 +4706,7 @@ public class ThreadDemo {
 
 如果一个属性上追加了 volatile 关键字，表示的就是不使用副本而是直接操作原始变量，相当于节约了拷贝副本，重新保存的步骤
 
-![](https://s2.loli.net/2022/05/24/on4pm2UryWQfDCz.png)
+![](java.assets/on4pm2UryWQfDCz-167626680218096.png)
 
 ```java
 class MyThread implements Runnable {
@@ -5071,7 +5071,7 @@ String、StringBuffer、StringBuilder 的区别：
 
 CharSequence 是一个描述字符串结构的接口，在这个接口里面一般发现有三种常用子类：String 类、StringBuffer 类、StringBuikder 类。
 
-![](https://s2.loli.net/2022/05/25/tjyHhE45KxIsPLg.png)
+![](java.assets/tjyHhE45KxIsPLg.png)
 
 所以字符串加入公共的描述类型，就是 CharSequence ，只要有字符串，就可以被 CharSequence 接口识别化，所有的字符串都可以这样接收。
 
@@ -5139,7 +5139,7 @@ public class JavaAPIDemo {
 
 关闭方法: void close()  throws Exception
 
-![](https://s2.loli.net/2022/05/25/4FAeBWswVoY5RTL.png)
+![](java.assets/4FAeBWswVoY5RTL.png)
 
 在整个的过程中，只有结合了 AutoCloseable ，整个程序才能实现自动的Close 调用，这种操作形式是在 JDK1.7 之后新增的处理，在以后的章节之中会接触到资源的关闭问题，往往都会见到 AutoCloseable 接口的使用。
 
@@ -5192,7 +5192,7 @@ Runtime 描述的是运行时的状态，也就是说在整个的 JVM 之中，R
 
 由于在最每一个 JVM 进程里面只允许提供有一个 Runtime 类的对象，所以这个类的构造方法被默认私有化了，那么就证明该类使用的是单例设计模式，并且单例设计模式一定会提供有一个 static 方法获取本类。
 
-![](https://s2.loli.net/2022/05/25/m4xVKQNHXzlMWfR.png)
+![](java.assets/m4xVKQNHXzlMWfR.png)
 
  
 
@@ -5465,7 +5465,7 @@ public class JavaAPIDemo {
 
 大数字处理类可以实现海量数字的计算
 
-![](https://s2.loli.net/2022/05/25/Cu3BcXMe524GIF6.png)
+![](java.assets/Cu3BcXMe524GIF6.png)
 
 BigInteger 类构造：
 
@@ -5531,7 +5531,7 @@ long 之中可以保存毫秒的数据级，这样方便程序处理。
 
 虽然 date 可以获取当前的日期时间，但是默认情况下 Date 类输出的日期结构并不能够被国人所习惯，那么现在就需要对显示的格式进行格式化处理，为了可以格式化日期，在 java.text 包中提供有 SimpleDateFormat 程序类。
 
-![](https://s2.loli.net/2022/05/25/y274vrNYDxpC3Sm.png)
+![](java.assets/y274vrNYDxpC3Sm.png)
 
 在该类中提供有如下的方法：
 
@@ -5555,7 +5555,7 @@ long 之中可以保存毫秒的数据级，这样方便程序处理。
   ```
 
   - 日期格式：年（yyyy）、月（MM）、日（dd）、时（HH）、分（mm）、秒（ss）、毫秒（SSS）
-  - ![image-20220525171256055](https://s2.loli.net/2022/05/25/eD34sRgC6BKfNZp.png)
+  - ![image-20220525171256055](java.assets/eD34sRgC6BKfNZp.png)
 
 ```java
 public class JavaAPIDemo {//日期格式化
@@ -5791,7 +5791,7 @@ public class JavaAPIDemo {
   public String[] split(String regex, int limit)
   ```
 
-![image-20220526105737491](https://s2.loli.net/2022/05/26/UAo9DwY5pigMGLV.png)
+![image-20220526105737491](java.assets/UAo9DwY5pigMGLV.png)
 
 下面通过一些具体的范例来对正则的使用进行说明。
 
@@ -5967,7 +5967,7 @@ public class JavaAPIDemo {
 - 如何可以定义保存文字的文件信息
 - 如何可以根据不同的区域语言的编码读取指定的资源信息
 
-![](https://s2.loli.net/2022/05/26/ZMAq7uHcICGeXO4.png)
+![](java.assets/ZMAq7uHcICGeXO4.png)
 
 ##### Locale类
 
@@ -6134,7 +6134,7 @@ Optional 类的主要功能是进行null的相关处理，在以前进行程序�
   public T orElse(T other)
   ```
 
-![](https://s2.loli.net/2022/05/30/LVza8hPGSyMHq5j.png)
+![](java.assets/LVza8hPGSyMHq5j.png)
 
 ```java
 interface IMessage {
@@ -6207,7 +6207,7 @@ public class JavaAPIDemo {
 }
 ```
 
-![](https://s2.loli.net/2022/05/30/nVZeOKpkSyNFUBd.png)
+![](java.assets/nVZeOKpkSyNFUBd.png)
 
 当前的程序实际上采用的是一种单线程的模式来进行处理的。
 
@@ -6238,7 +6238,7 @@ public class JavaAPIDemo {
 
 这时消息的处理产生了影响
 
-![](https://s2.loli.net/2022/05/30/NXJyr8WRnD9ixPH.png)
+![](java.assets/NXJyr8WRnD9ixPH.png)
 
 在保持 Channel( 所有发送的通道）核心结构不改变的情况下，需要考虑到每个线程的独立操作问题。
 
@@ -6272,7 +6272,7 @@ public class JavaAPIDemo {
   public void remove()
   ```
 
-![](https://s2.loli.net/2022/05/30/8olYDCvBSpQaue4.png)
+![](java.assets/8olYDCvBSpQaue4.png)
 
 ```java
 class Channel {//消息的发送通道
@@ -6357,7 +6357,7 @@ public class JavaAPIDemo {
 }
 ```
 
-![](https://s2.loli.net/2022/05/30/IDWulKx14abdqvp.png)
+![](java.assets/IDWulKx14abdqvp.png)
 
 Timer 对调度的支持是基于绝对时间，而不是相对时间的，由此任务对系统时钟的改变是敏感的；这种定时是由 JDK 最原始的方式提供的支持，但实际上开发之中利用此类方式进行定时处理的代码会非常复杂
 
@@ -6537,7 +6537,7 @@ public class JavaAPIDemo {
 
 通过分析可以发现如果要实现对象的比较肯定需要有比较器来制定比较规则，而比较的规则就通过Comparable来实现，对于 Comparable 而言，需要清楚其基本的定义结构：
 
-![](https://s2.loli.net/2022/05/30/6gs4Sf2ckIdZNzQ.png)
+![](java.assets/6gs4Sf2ckIdZNzQ.png)
 
 ```java
 class Person implements Comparable<Person> {
@@ -7222,7 +7222,7 @@ public class JavaAPIDemo {
 
 例如，通过电脑连接服务器上进行浏览的时候，实际上此时客户端发出了一个信息，而后服务器接收到此信息之后进行回应处理。
 
-![](https://s2.loli.net/2022/05/30/KLNRutb6FUAP5kQ.png)
+![](java.assets/KLNRutb6FUAP5kQ.png)
 
 对于服务器或者是客户端而言实质上传递的就是一种数据流的处理形式，而所谓的数据流指的就是字节数据。
 
@@ -7251,7 +7251,7 @@ public abstract class OutputStream extends Object implements Closeable, Flushabl
 
 首先可以发现这个类实现了两个接口，于是基本的对应关系如下：
 
-![](https://s2.loli.net/2022/05/30/DoWVdZ5ImjYygbh.png)
+![](java.assets/DoWVdZ5ImjYygbh.png)
 
 ```java
 public interface Closeable extends AutoCloseable {
@@ -7411,7 +7411,7 @@ public byte[] readAllBytes() throws IOException
 public abstract class Writer implements Appendable, Closeable, Flushable
 ```
 
-![](https://s2.loli.net/2022/05/31/FcoYJTiaPWqZprX.png)
+![](java.assets/FcoYJTiaPWqZprX.png)
 
 - 输出字符数组
 
@@ -7511,7 +7511,9 @@ public class OutputStreamWriter extends Writer{
 }
 ```
 
-![](https://s2.loli.net/2022/05/31/Ebwar5ROZmKVLJk.png)接收字节流对象利用向上转换变成字符流对象。
+![](java.assets/Ebwar5ROZmKVLJk.png)
+
+接收字节流对象利用向上转换变成字符流对象。
 
 转换的本质在于对象的转型和构造方法的接收。通过类的继承结构与构造方法，可以发现所谓的转换处理就是将接收到的字节流对象通过向上转流型变为字符流对象。
 
@@ -7534,15 +7536,15 @@ public class JavaAPIDemo {
 
 观察 FileWriter，FileReader 类的继承关系。
 
-![image-20220531102406133](https://s2.loli.net/2022/05/31/tvFdWqIB2PJ5a8H.png)
+![image-20220531102406133](java.assets/tvFdWqIB2PJ5a8H.png)
 
 
 
-![image-20220531102718455](https://s2.loli.net/2022/05/31/7uWopQzlYbgqImv.png)
+![image-20220531102718455](java.assets/7uWopQzlYbgqImv.png)
 
 
 
-![image-20220531103501350](https://s2.loli.net/2022/05/31/s1P4ZntdgIrBeoU.png)
+![image-20220531103501350](java.assets/s1P4ZntdgIrBeoU.png)
 
 
 
@@ -7773,17 +7775,17 @@ public class JavaAPIDemo {
 
 字节内存操作流：
 
-![](https://s2.loli.net/2022/06/01/7GUdCfSjKi4XLhc.png)
+![](java.assets/7GUdCfSjKi4XLhc.png)
 
-![](https://s2.loli.net/2022/06/01/1vsViIw7tRGHMl5.png)
+![](java.assets/1vsViIw7tRGHMl5.png)
 
 字符内存操作流：
 
-![](https://s2.loli.net/2022/06/01/amu9xCDoQcfzZBJ.png)
+![](java.assets/amu9xCDoQcfzZBJ.png)
 
 
 
-![](https://s2.loli.net/2022/06/01/1SFlhuHXUE2T4LB.png)
+![](java.assets/1SFlhuHXUE2T4LB.png)
 
 在 ByteArrayOutputStream 类里面有一个重要的方法，这个方法可以获取全部保存在内存流里面的数据信息。
 
@@ -7820,7 +7822,7 @@ public class JavaAPIDemo {
 
 管道流的主要功能是实现两个线程之间的 IO 处理操作
 
-![](https://s2.loli.net/2022/06/01/fITvqJBwF4GAOQx.png)
+![](java.assets/fITvqJBwF4GAOQx.png)
 
 对于管道流也是分为两类：
 
@@ -7955,7 +7957,7 @@ OutputStream 是唯一可以实现输出的操作标准类，应该以其为核�
 
 为了解决输出问题，在 java.io 包里面提供有打印流: PrintStream、 PrintWriter。
 
-![](https://s2.loli.net/2022/06/01/dZqivUJFtz5hfBr.png)
+![](java.assets/dZqivUJFtz5hfBr.png)
 
 ```java
 public class JavaAPIDemo {
@@ -8003,7 +8005,7 @@ public class JavaAPIDemo {
 
 BufferedReader 类提供的是一个缓冲字符输入流的概念，利用 BufferedReader 类可以很好的解决输入流数据的读取问题，这个类最初提供最完善的数据输入的处理(JDK1.5之前，JDK1.5 之后出了一个功能更强大的类代替此类)。
 
-![](https://s2.loli.net/2022/06/01/ojefPHlQOb8naVv.png)
+![](java.assets/ojefPHlQOb8naVv.png)
 
 使用这个类处理，是因为这个类提供了一个重要的方法:
 
@@ -8116,7 +8118,7 @@ public class JavaAPIDemo {
 
 序列化是将对象转换为可传输格式的过程。 是一种数据的持久化手段。一般广泛应用于网络传输，RMI和RPC等场景中。
 
-![](https://s2.loli.net/2022/06/01/QXm9vWIHLp3KOPs.png)
+![](java.assets/QXm9vWIHLp3KOPs.png)
 
 并不是所有的对象都可以被序列化，在 Java 里面有一个强制性的要求：如果要序列化的对象，那么对象所在的类实现 java.io.Serializable父接口，作为序列化的标记。
 
@@ -8676,7 +8678,7 @@ public Class<?> getType()
 
 在 Java 语言里面提供有一个系统的环境变量：CLASSPATH，这个环境属性的作用主要是在 JVM进程启动的时候进行类加载路径的定义，在JVM里面可以根据类加载器而后进行指定路径中类的加载，换一种说法找到了类的加载器就意味着找到了类的来源。
 
-![](https://s2.loli.net/2022/06/01/Dtj4QHB6ERFh7Ms.png)
+![](java.assets/Dtj4QHB6ERFh7Ms.png)
 
 如果说现在要想获得类的加载器，那么一定要通过ClassLoader来获取，而要想获取ClassLoader类的对象，则必须利用Class类（反射的根源）实现。
 
@@ -8692,7 +8694,7 @@ public ClassLoader getClassLoader();
 public final ClassLoader getParent().
 ```
 
-![](https://s2.loli.net/2022/06/01/rmueYtbvn6E4958.png)
+![](java.assets/rmueYtbvn6E4958.png)
 
 当你获得了类加载器之后就可以利用类加载器来实现类的反射加载处理。
 
@@ -8702,7 +8704,7 @@ public final ClassLoader getParent().
 
 系统类中的类加载器都是根据 CLASSPATH 路径进行类加载的，而如果有了自定义类的加载器，就可以由开发者任意指派类的加载位置。
 
-![](https://s2.loli.net/2022/06/01/WVSFhi6EeOkNjwu.png)
+![](java.assets/WVSFhi6EeOkNjwu.png)
 
 
 
@@ -8775,7 +8777,7 @@ public class JavaAPIDemo {
 - 不管是动态代理类还是静态代理类都一定要接收真实业务实现子类对象。
 - 由于动态代理类不再与某一个具体的接口进行捆绑，所以应该可以动态获取类的接口信息。
 
-![](https://s2.loli.net/2022/06/02/zaZR2hrTkvux4Ig.png)
+![](java.assets/zaZR2hrTkvux4Ig.png)
 
 在进行动态代理实现的操作之中，首先需要关注的就是一个 Invocation Handler 接口，这个接口规定了代理方法的执行。
 
@@ -8808,7 +8810,7 @@ public interface InvocationHandler {
 public static Object newProxyInstance(ClassLoader loader, Class<?>[] interfaces, InvocationHandler h)
 ```
 
-![](https://s2.loli.net/2022/06/02/3BRkbA8VTxhPvgF.png)
+![](java.assets/3BRkbA8VTxhPvgF.png)
 
 在整个代理操作中，第一个操作Invocation handler，第二个核心类proxy。
 
@@ -8936,7 +8938,7 @@ extends AbstractList<E>
 implements List<E>, RandomAccess, Cloneable, Serializable
 ```
 
-![](https://s2.loli.net/2022/06/02/jZUlKXug3WEbhQ4.png)
+![](java.assets/jZUlKXug3WEbhQ4.png)
 
 ```java
 public class JavaAPIDemo {
@@ -9039,7 +9041,7 @@ public class HashSet<E>
     implements Set<E>, Cloneable, java.io.Serializable
 ```
 
-![image-20220606095350770](https://s2.loli.net/2022/06/06/8WqKUDhEMLZv6xP.png)
+![image-20220606095350770](java.assets/8WqKUDhEMLZv6xP.png)
 
 HashSet子类的操作特点：不允许保存重复元素（Set 接口定义的），另外一点HashSet之中保存的数据是无序的。
 
@@ -9054,7 +9056,7 @@ public class TreeSet<E> extends AbstractSet<E>
     implements NavigableSet<E>, Cloneable, java.io.Serializable
 ```
 
-![image-20220606100329899](https://s2.loli.net/2022/06/06/epI34HgzsGOMokj.png)
+![image-20220606100329899](java.assets/epI34HgzsGOMokj.png)
 
 当利用 TreeSet 保存数据的时候，所有的数据都将按照数据的升序进行自动排序处理。
 
@@ -9191,7 +9193,7 @@ public class JavaAPIDemo {
 
 需要注意的是如果要想获取 ListIterator 接口对象 Collection 并没有定义相关的处理方法，但是 List 子接口有，也就是说这个输出接口是专门为 List 集合准备的。
 
-![](https://s2.loli.net/2022/06/06/ZN5f2E3Sxu8OP94.png)
+![](java.assets/ZN5f2E3Sxu8OP94.png)
 
 ```java
 public class JavaAPIDemo {
@@ -9404,7 +9406,7 @@ public Set<Map.Entry<K,V>> entrySet()
 
 将全部的Map 集合转为 Set 集合。
 
-![image-20220606174555275](https://s2.loli.net/2022/06/06/9HiAeNP5ujOdfca.png)
+![image-20220606174555275](java.assets/9HiAeNP5ujOdfca.png)
 
 经过分析可以发现如果要想使用 Iterator 实现 Map 集合的输出则必须按照如下步骤处理：
 
@@ -9516,7 +9518,7 @@ public class JavaAPIDemo {
 
 如果在进行 HashMap 进行数据操作的时候出现了 Hash  冲突（Hash码相同），为了保证程序的正常执行，会在冲突的位置上将所有 Hash 冲突的内容转为链表保存。
 
-![](https://s2.loli.net/2022/06/06/ABmsMl3b7yD4u9W.png)
+![](java.assets/ABmsMl3b7yD4u9W.png)
 
 
 
@@ -9609,7 +9611,7 @@ public class Collections
 extends Object
 ```
 
-![image-20220608103003440](https://s2.loli.net/2022/06/08/ESmFoqKTWIfDGBA.png)
+![image-20220608103003440](java.assets/ESmFoqKTWIfDGBA.png)
 
 ```java
 public class JavaAPIDemo {
@@ -9686,7 +9688,7 @@ B/S (Browse/Server、浏览器与服务器端):只开发一套服务器端的程
 
 TCP 的程序开发是网络程序的最基本的开发模型，其核心的特点是使用两个类实现数据的交互处理: ServerSocket  (服务器端)、Socket（客户端）
 
-![](https://s2.loli.net/2022/06/08/NcPF5sd9nha7ekD.png)
+![](java.assets/NcPF5sd9nha7ekD.png)
 
 ```java
 public class EchoServer {
@@ -9792,7 +9794,7 @@ maven项目需要在pom.xml文件中添加依赖配置，无需手动添加驱�
 </dependency>
 ```
 
-![image-20220609094930064](https://s2.loli.net/2022/06/09/A8v3f45kTXyFOC6.png)
+![image-20220609094930064](java.assets/A8v3f45kTXyFOC6.png)
 
 通过数据库连接的流程可以发现，JDBC是通过工厂的设计模式实现的，DriverManager是一个工厂，不同的数据库生产商利用JDBC提供的标准（接口）实现各自的数据库处理操作。
 
@@ -9897,7 +9899,7 @@ ResultSet executeQuery() throws SQLException;
 int executeUpdate() throws SQLException;
 ```
 
-![image-20220609134652409](https://s2.loli.net/2022/06/09/6HQXNWi5xwLlfJ2.png)
+![image-20220609134652409](java.assets/6HQXNWi5xwLlfJ2.png)
 
 ```java
 public class JDBCDemo {
