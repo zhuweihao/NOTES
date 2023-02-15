@@ -1,3 +1,7 @@
+JDK8官方文档：https://docs.oracle.com/javase/8/docs/api/
+
+JDK17官方文档:https://docs.oracle.com/en/java/javase/17/docs/api/index.html
+
 # JDK选型、安装与配置
 
 ## JAVA抽象层
