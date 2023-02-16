@@ -294,15 +294,14 @@ resp.sendRedirect("add");
 - 状态码为302
 - 响应头中Location标明了重定向的资源
 
-## 作用域
+## 保存作用域
 
-![image-20230215151112614](javaweb.assets/image-20230215151112614.png)
+保存作用域有四个
 
-常用API：
-
-- void session.setAttribute(k,v)
-- Object session.getAttribute(k)
-- void session.removeAttribute(k)
+- page，页面级别，JSP使用，现在基本不用
+- request：请求域，一次请求响应范围
+- session：会话域，一次会话范围
+- application：应用域，整个应用程序范围
 
 
 
@@ -338,4 +337,154 @@ Thymeleaf优势：
 
 
 物理视图=视图前缀+逻辑视图+视图后缀
+
+### 基本语法
+
+```html
+<table id="tbl_fruit">
+    <tr>
+        <th class="w20">名称</th>
+        <th class="w20">单价</th>
+        <th class="w20">库存</th>
+        <th>操作</th>
+    </tr>
+    <tr th:if="${#lists.isEmpty(session.fruitList)}">
+        <td colspan="4">对不起，库存为空！</td>
+    </tr>
+    <tr th:unless="${#lists.isEmpty(session.fruitList)}" th:each="fruit : ${session.fruitList}">
+        <td th:text="${fruit.fname}">苹果</td>
+        <td th:text="${fruit.price}">5</td>
+        <td th:text="${fruit.fcount}">20</td>
+        <td><img src="img/del.jpg" class="delImg"/></td>
+    </tr>
+</table>
+```
+
+##### 修改标签文本
+
+```html
+<p th:text="标签体新值">标签体原始值</p>
+```
+
+- 不经过服务器解析，直接用浏览器打开HTML文件，看到的是『标签体原始值』
+- 经过服务器解析，Thymeleaf引擎根据th:text属性指定的『标签体新值』去**替换**『标签体原始值』
+
+##### 修改指定属性值
+
+```html
+<input type="text" name="username" th:value="文本框新值" value="文本框旧值" />
+```
+
+任何HTML标签原有的属性，前面加上『th:』就都可以通过Thymeleaf来设定新值
+
+##### 直接执行表达式
+
+servlet代码
+
+```java
+request.setAttribute("reqAttrName", "<span>hello-value</span>");
+```
+
+页面代码
+
+```html
+<p>有转义效果：[[${reqAttrName}]]</p>
+<p>无转义效果：[(${reqAttrName})]</p>
+```
+
+执行效果
+
+![image-20230216160010471](javaweb.assets/image-20230216160010471.png)
+
+##### 访问域对象
+
+###### 请求域
+
+在请求转发的场景下，我们可以借助HttpServletRequest对象内部给我们提供的存储空间，帮助我们携带数据，把数据发送给转发的目标资源。
+
+请求域：HttpServletRequest对象内部给我们提供的存储空间
+
+<img src="javaweb.assets/image-20230216152037378.png" alt="image-20230216152037378" style="zoom:50%;" />
+
+Servlet中代码：
+
+```java
+String requestAttrName = "helloRequestAttr";
+String requestAttrValue = "helloRequestAttr-VALUE";
+
+request.setAttribute(requestAttrName, requestAttrValue);
+```
+
+Thymeleaf表达式：
+
+```html
+<p th:text="${helloRequestAttr}">request field value</p>
+```
+
+###### 会话域
+
+<img src="javaweb.assets/image-20230216152142944.png" alt="image-20230216152142944" style="zoom:50%;" />
+
+Servlet中代码：
+
+```java
+// ①通过request对象获取session对象
+HttpSession session = request.getSession();
+
+// ②存入数据
+session.setAttribute("helloSessionAttr", "helloSessionAttr-VALUE");
+```
+
+Thymeleaf表达式：
+
+```html
+<p th:text="${session.helloSessionAttr}">这里显示会话域数据</p>
+```
+
+
+
+
+
+##### 分支和迭代
+
+###### if和unless
+
+让标记了th:if、th:unless的标签根据条件决定是否显示。
+
+```html
+    <tr th:if="${#lists.isEmpty(employeeList)}">
+        <td colspan="3">抱歉！没有查询到你搜索的数据！</td>
+    </tr>
+    <tr th:if="${not #lists.isEmpty(employeeList)}">
+        <td colspan="3">有数据！</td>
+    </tr>
+    <tr th:unless="${#lists.isEmpty(employeeList)}">
+        <td colspan="3">有数据！</td>
+    </tr>
+```
+
+if配合not关键词和unless配合原表达式效果是一样的，看自己的喜好。
+
+###### switch
+
+```html
+<h3>测试switch</h3>
+<div th:switch="${user.memberLevel}">
+    <p th:case="level-1">银牌会员</p>
+    <p th:case="level-2">金牌会员</p>
+    <p th:case="level-3">白金会员</p>
+    <p th:case="level-4">钻石会员</p>
+</div>
+```
+
+###### 迭代
+
+```html
+<tr th:unless="${#lists.isEmpty(session.fruitList)}" th:each="fruit : ${session.fruitList}">
+        <td th:text="${fruit.fname}">苹果</td>
+        <td th:text="${fruit.price}">5</td>
+        <td th:text="${fruit.fcount}">20</td>
+        <td><img src="img/del.jpg" class="delImg"/></td>
+    </tr>
+```
 
