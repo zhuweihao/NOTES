@@ -488,3 +488,210 @@ if配合not关键词和unless配合原表达式效果是一样的，看自己的
     </tr>
 ```
 
+# 水果库存系统实现
+
+### 功能实现
+
+<img src="javaweb.assets/image-20230217111432944.png" alt="image-20230217111432944" style="zoom:67%;" />
+
+##### 首页
+
+<img src="javaweb.assets/image-20230217111639877.png" alt="image-20230217111639877" style="zoom: 50%;" />
+
+```java
+@WebServlet("/index")
+public class IndexServlet extends ViewBaseServlet {
+
+    private FruitDAOImpl fruitDAO = new FruitDAOImpl();
+
+    @Override
+    protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        //默认当前为第一页
+        Integer page = 1;
+        //获取当前页
+        String pageStr = req.getParameter("page");
+        if (StringUtil.idNotEmpty(pageStr)) {
+            page = Integer.parseInt(pageStr);
+        }
+        HttpSession session = req.getSession();
+        Connection connection = JDBCUtils.getConnection();
+        //获取总页数
+        Long fruitCount = fruitDAO.getCount(connection);
+        Long pageCount = (fruitCount + 5 - 1) / 5;
+        session.setAttribute("pageCount", pageCount);
+
+        //判断翻页逻辑
+        if (page <= 1) {
+            page = 1;
+            List<Fruit> fruitList = fruitDAO.getFruitList(connection, page);
+            //保存到session作用域
+            session.setAttribute("fruitList", fruitList);
+            session.setAttribute("page", page);
+        } else if (page <= pageCount) {
+            List<Fruit> fruitList = fruitDAO.getFruitList(connection, page);
+            //保存到session作用域
+            session.setAttribute("fruitList", fruitList);
+            session.setAttribute("page", page);
+        } else {
+            page = pageCount.intValue();
+            List<Fruit> fruitList = fruitDAO.getFruitList(connection, page);
+            //保存到session作用域
+            session.setAttribute("fruitList", fruitList);
+            session.setAttribute("page", page);
+        }
+        super.processTemplate("index", req, resp);
+    }
+}
+```
+
+##### 库存信息的增删改
+
+###### 修改
+
+点击库存名称进入修改页面
+
+<img src="javaweb.assets/image-20230217111853807.png" alt="image-20230217111853807" style="zoom:50%;" />
+
+输入所要修改的信息后点击修改会重新跳转到首页
+
+<img src="javaweb.assets/image-20230217111955129.png" alt="image-20230217111955129" style="zoom:50%;" />
+
+> 注意：修改完信息跳转回首页时不需要重新渲染首页，而是采用重定向的方式跳转
+>
+> ```java
+> //重定向，获取最新的库存信息
+> resp.sendRedirect("index");
+> ```
+
+```java
+@WebServlet("/update.do")
+public class UpdateServlet extends ViewBaseServlet {
+    private FruitDAOImpl fruitDAO = new FruitDAOImpl();
+
+    @Override
+    protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        req.setCharacterEncoding("utf-8");
+        String fname = req.getParameter("fname");
+        int price = Integer.parseInt(req.getParameter("price"));
+        String remark = req.getParameter("remark");
+        int fcount = Integer.parseInt(req.getParameter("fcount"));
+        int fid = Integer.parseInt(req.getParameter("fid"));
+        fruitDAO.updataById(JDBCUtils.getConnection(), new Fruit(fid, fname, price, fcount, remark));
+        //重定向，获取最新的库存信息
+        resp.sendRedirect("index");
+    }
+}
+```
+
+###### 添加
+
+<img src="javaweb.assets/image-20230217112428688.png" alt="image-20230217112428688" style="zoom:50%;" />
+
+##### 库存信息查询功能
+
+<img src="javaweb.assets/image-20230217112607936.png" alt="image-20230217112607936" style="zoom:50%;" />
+
+##### 分页功能
+
+实现该功能时应注意，判断注意翻页时的逻辑判断。
+
+例如，如果当前页为首页，点击上一页时应保持不变，这需要我们进行一定的逻辑判断，否则会出错。
+
+### MVC
+
+<img src="javaweb.assets/image-20230217114650489.png" alt="image-20230217114650489" style="zoom:50%;" />
+
+下面的方法虽然可以达到目的，但是如果有很多方法，使用起来十分的不方便。
+
+```java
+@WebServlet("/fruit.do")
+public class FruitServlet extends ViewBaseServlet {
+    private FruitDAOImpl fruitDAO = new FruitDAOImpl();
+
+    @Override
+    protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        req.setCharacterEncoding("utf-8");
+
+        String operate = req.getParameter("operate");
+        if(StringUtil.isEmpty(operate)){
+            operate="index";
+        }
+
+        switch (operate){
+            case "index":
+                index(req,resp);
+                break;
+            case "add":
+                add(req,resp);
+                break;
+            case "del":
+                del(req, resp);
+                break;
+            case "update":
+                update(req, resp);
+                break;
+            case "search":
+                search(req, resp);
+                break;
+            case "edit":
+                edit(req, resp);
+                break;
+            default:
+                throw new RuntimeException("operate值异常");
+        }
+
+    }
+    private void index(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {}
+
+    private void add(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {}
+
+    private void del(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {}
+
+    private void update(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {}
+
+    private void search(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException { }
+
+    private void edit(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {}
+    
+}
+```
+
+##### 使用反射
+
+```java
+@Override
+protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+    req.setCharacterEncoding("utf-8");
+
+    String operate = req.getParameter("operate");
+    if(StringUtil.isEmpty(operate)){
+        operate="index";
+    }
+
+    //获取当前类中的所有方法
+    Method[] declaredMethods = this.getClass().getDeclaredMethods();
+    for (Method m :
+            declaredMethods) {
+        //获取方法名称
+        String mName = m.getName();
+        if (operate.equals(mName)){
+            //找到和operate同名的方法，通过反射技术进行调用
+            try {
+                m.invoke(this,req,resp);
+                return;
+            } catch (IllegalAccessException e) {
+                throw new RuntimeException(e);
+            } catch (InvocationTargetException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    throw new RuntimeException("operate值异常");
+
+}
+```
+
+##### 引入DispatcherServlet
+
+<img src="javaweb.assets/image-20230217153849826.png" alt="image-20230217153849826" style="zoom:50%;" />
