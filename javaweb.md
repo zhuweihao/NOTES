@@ -200,6 +200,86 @@ Servlet在容器中是单例的，线程不安全的
 - 线程不安全：两个线程同时被响应时，一个线程改变了成员变量可能会导致另一个线程代码执行路径发生改变，引起错误。
 - 因此，尽量不要在servlet中定义成员变量，如果必须定义，注意不要修改成员变量的值，不要根据成员变量进行逻辑判断
 
+#### 初始化方法
+
+servlet有两个init方法，一个有参，一个无参
+
+```java
+public void init(ServletConfig config) throws ServletException {
+    this.config = config;
+    this.init();
+}
+
+public void init() throws ServletException {
+}
+```
+
+如果我们想要在servlet初始化时做一些准备工作，可以重写init方法
+
+```java
+@Override
+public void init() throws ServletException {
+    ServletConfig servletConfig = getServletConfig();
+    String hello = servletConfig.getInitParameter("hello");
+    System.out.println("hello = " + hello);
+}
+```
+
+有有两种方式配置初始化设置的数据
+
+```java
+@WebServlet(urlPatterns = {"/demo"},
+        initParams = {
+                @WebInitParam(name = "hello", value = "world"),
+                @WebInitParam(name = "test", value = "example")
+        })
+```
+
+```xml
+<servlet>
+    <servlet-name>demo</servlet-name>
+    <servlet-class>com.zhuweihao.servlets.demo</servlet-class>
+    <init-param>
+        <param-name>hello</param-name>
+        <param-value>world</param-value>
+    </init-param>
+</servlet>
+<servlet-mapping>
+    <servlet-name>demo</servlet-name>
+    <url-pattern>/demo</url-pattern>
+</servlet-mapping>
+```
+
+#### ServletContext
+
+获取ServletContext有很多方法
+
+- 初始化方法中
+
+  ```java
+  ServletContext servletContext = getServletContext();
+  //获取初始化值
+  String contextConfigLocation = servletContext.getInitParameter("contextConfigLocation");
+  System.out.println("contextConfigLocation = " + contextConfigLocation);
+  ```
+
+- 服务方法中
+
+  ```
+  req.getServletContext();
+  ```
+
+  
+
+```xml
+<context-param>
+    <param-name>contextConfigLocation</param-name>
+    <param-value>classpath:applicationContext.xml</param-value>
+</context-param>
+```
+
+
+
 ## 会话控制
 
 HTTP协议本身是无状态的。单靠HTTP协议本身无法判断一个请求来自于哪一个浏览器，所以也就没法识别用户的身份状态。
@@ -597,7 +677,7 @@ public class UpdateServlet extends ViewBaseServlet {
 
 例如，如果当前页为首页，点击上一页时应保持不变，这需要我们进行一定的逻辑判断，否则会出错。
 
-### MVC
+### 代码优化
 
 <img src="javaweb.assets/image-20230217114650489.png" alt="image-20230217114650489" style="zoom:50%;" />
 
@@ -695,3 +775,81 @@ protected void service(HttpServletRequest req, HttpServletResponse resp) throws 
 ##### 引入DispatcherServlet
 
 <img src="javaweb.assets/image-20230217153849826.png" alt="image-20230217153849826" style="zoom:50%;" />
+
+引入反射技术后可以发现，如果有很多个servlet，servlet中都会有类似的反射技术的代码，因此继续抽取，使用中央控制器：DispatcherServlet
+
+DispatcherServlet这个类分为两大部分：
+
+- 根据url定位到能够处理请求的controller组件：
+
+  1. 从url中提取servletPath：/fruit.do -> fruit
+
+  2. 根据fruit找到对应的组件：FruitController。这个对应关系存储在applicationContext.xml中
+
+     ```xml
+     <bean id="fruit" class="com.zhuweihao.controllers.FruitController"/>
+     ```
+
+     通过DOM技术解析XML文件，在中央控制器中形成一个beanMap容器，用来存放所有的Controller组件
+
+  3. 根据获取到的operate的值定位到FruitController中需要调用的方法
+
+- 调用Controller组件中的方法
+
+  1. 获取参数：需要考虑参数的类型问题
+
+     ```java
+     //从请求中获取参数值
+     String parameterValue = req.getParameter(parameter.getName());
+     String typeName = parameter.getType().getName();
+     Object parameterObj=parameterValue;
+     if(parameterObj!=null){
+     if("java.lang.Integer".equals(typeName)){
+     parameterObj=Integer.parseInt(parameterValue);
+     }
+     //根据需要进行扩充，如boolean类型
+     }
+     parameterValues[i] = parameterObj;
+     ```
+
+  2. 执行方法
+
+  3. 视图处理
+
+##### service层、controller层
+
+
+
+### MVC
+
+[(33条消息) 浅析VO、DTO、DO、PO、POJO区别_骑个小蜗牛的博客-CSDN博客_pojo vo dto](https://blog.csdn.net/JokerLJG/article/details/119656022)
+
+----------------
+
+MVC：Model（模型）、View（视图）、Controller（控制器）
+
+- 视图层：用于做数据展示以及用户交互的界面
+- 控制层：能够接受客户端的请求，具体的业务功能还是需要借助于模型组件完成
+- 模型层：模型分为很多种，有比较简单的pojo/vo(value object)，有业务模型组件，有数据访问层组件
+  - pojo/vo：值对象
+  - DAO：数据访问对象
+  - BO：业务对象
+
+区分业务对象和数据访问对象：
+
+- DAO中的方法都是细粒度方法，一个方法只考虑一个操作，比如添加
+- BO 中的方法属于业务方法，比较复杂
+
+例如，注册功能属于业务方法，这个业务方法包含了多个DAO方法，也就是说注册这个业务功能需要通过多个DAO方法的组合调用，从而完成注册功能的开发。
+
+注册：
+
+1. 检查用户名是否已经被注册。	DAO中的select操作
+2. 向用户表新增一条新用户记录。      DAO中的insert操作
+3. 向用户积分表新增一条记录。     DAO中的insert操作
+4. 。。。。。。
+
+
+
+### ioc
+
