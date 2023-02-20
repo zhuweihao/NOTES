@@ -804,9 +804,9 @@ DispatcherServlet这个类分为两大部分：
      String typeName = parameter.getType().getName();
      Object parameterObj=parameterValue;
      if(parameterObj!=null){
-     if("java.lang.Integer".equals(typeName)){
-     parameterObj=Integer.parseInt(parameterValue);
-     }
+         if("java.lang.Integer".equals(typeName)){
+             parameterObj=Integer.parseInt(parameterValue);
+         }
      //根据需要进行扩充，如boolean类型
      }
      parameterValues[i] = parameterObj;
@@ -815,6 +815,10 @@ DispatcherServlet这个类分为两大部分：
   2. 执行方法
 
   3. 视图处理
+  
+  > 需要注意，进行图中的设置才可以，因为java默认会在编译时将形参名称擦除，添加图中的配置后注意重新生成artifacts。
+  >
+  > <img src="javaweb.assets/image-20230220113723915.png" alt="image-20230220113723915" style="zoom:50%;" />
 
 ##### service层、controller层
 
@@ -851,5 +855,54 @@ MVC：Model（模型）、View（视图）、Controller（控制器）
 
 
 
-### ioc
+### IOC（Inversion of Control，控制反转）DI（Dependency Injection）
 
+##### 耦合/依赖
+
+在软件系统中，层与层之间是存在依赖的，也称之为耦合。
+
+软件系统架构设计的一个原则是：高内聚，低耦合
+
+层内部的组成是高度聚合的，层与层之间的关系应该是低耦合的，最理想的情况是没有耦合。
+
+##### IOC - 控制反转 / DI - 依赖注入
+
+###### 控制反转
+
+之前在FruitController中，创建Service对象
+
+```java
+FruitService fruitService = new FruitServiceImpl();
+```
+
+如果在FruitController中某个方法内部创建，那么fruitService的作用域（生命周期）就是这个方法级别。
+
+如果在FruitController中作为成员变量创建，那么fruitService的作用域就是这个fruitController实例级别
+
+之后通过配置并解析applicationContext.xml，产生fruitService实例，存放在beanMap中，这个beanMap在一个BeanFactory中，因此，我们转移（改变）了之前的service实例，dao实例等的生命周期。
+
+控制权从写死的代码转移到BeanFactory，这个BeanFactory就是IOC容器，这个现象就是控制反转
+
+###### 依赖注入
+
+之前控制层有如下代码，controller层和service层存在耦合
+
+```java
+FruitService fruitService = new FruitServiceImpl();
+```
+
+后来修改如下
+
+```java
+private FruitService fruitService = null;
+```
+
+然后，在配置文件中进行配置
+
+```xml
+<bean id="fruit" class="com.zhuweihao.controllers.FruitController">
+    <property name="fruitService" ref="fruitService"/>
+</bean>
+```
+
+在BeanFactory的实现类中，通过反射实现注入（也就是给实例对象的成员属性进行赋值，值为ref对应类的实例对象）
