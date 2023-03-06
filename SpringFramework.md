@@ -45,7 +45,40 @@ DI：dependency injection，依赖注入，是IOC的一种实现方式
 属性注入方法：
 
 - 使用set方法进行注入
-- 有参构造方法注入
+
+![image-20230306201259897](SpringFramework.assets/image-20230306201259897.png)
+
+- 有参构造方法注入，要编写有参构造函数
+
+![image-20230306203054402](SpringFramework.assets/image-20230306203054402.png)
+
+![image-20230306203130412](SpringFramework.assets/image-20230306203130412.png)
+
+- p空间注入，其实也是用set方法进行注入，可以在set方法上打断点进行观察，“q”是可以自定义的
+
+![image-20230306204047024](SpringFramework.assets/image-20230306204047024.png)
+
+##### 注入其他类型属性
+
+> 字面量
+
+###### 空值
+
+![image-20230306204941036](SpringFramework.assets/image-20230306204941036.png)
+
+###### 属性值包含特殊符号
+
+> 把特殊字符进行转义
+
+把特殊字符内容写到CDATA
+
+![image-20230306205643401](SpringFramework.assets/image-20230306205643401.png)
+
+###### 外部bean
+
+![image-20230306210114918](SpringFramework.assets/image-20230306210114918.png)
+
+###### 内部bean和级联赋值
 
 
 
