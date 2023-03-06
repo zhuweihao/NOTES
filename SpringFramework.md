@@ -32,3 +32,66 @@ bean管理操作有两种方式
 ##### 创建对象
 
 ![image-20230227114842618](SpringFramework.assets/image-20230227114842618.png)
+
+- id：唯一标识
+- class：全路径名
+
+创建对象的时候默认执行无参构造方法完成对象创建
+
+##### 注入属性
+
+DI：dependency injection，依赖注入，是IOC的一种实现方式
+
+属性注入方法：
+
+- 使用set方法进行注入
+- 有参构造方法注入
+
+
+
+# 日志测试等功能
+
+
+
+#### 整合JUnit5单元测试框架
+
+##### JUnit4
+
+![image-20230306114803507](SpringFramework.assets/image-20230306114803507.png)
+
+注意点：
+
+- locations为编译后路径![image-20230306114909687](SpringFramework.assets/image-20230306114909687.png)
+- 注意与后面的方法所导入的包不同![image-20230306114952186](SpringFramework.assets/image-20230306114952186.png)
+
+依赖引入：
+
+```xml
+
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.2</version>
+            <scope>test</scope>
+        </dependency>
+```
+
+
+
+##### 整合JUnit5
+
+![image-20230306115153026](SpringFramework.assets/image-20230306115153026.png)
+
+依赖包如下
+
+![image-20230306115218153](SpringFramework.assets/image-20230306115218153.png)
+
+```xml
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <version>5.7.2</version>
+            <scope>test</scope>
+        </dependency>
+```
+
