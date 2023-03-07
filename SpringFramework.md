@@ -287,6 +287,96 @@ public class FruitController {
 
 # AOP
 
+## 代理模式（Proxy）
+
+### 基本介绍
+
+代理模式：为一个对象提供一个替身，以控制对这个对象的访问。即通过代理对象访问目标对象，这样做的好处是，可以在目标对象实现的基础上，增强额外的功能操作，即扩展对象的功能。
+
+被代理的对象可以是远程对象，创建开销大的对象或需要安全控制的对象
+
+代理模式有不同的形式，主要有三种：
+
+- 静态代理
+- 动态代理（JDK代理、接口代理）
+- CGLIB代理：可以在内存动态的创建对象，不需要实现接口，有些地方他把划作动态代理的范畴
+
+### 静态代理
+
+静态代理在使用时，需要定义接口或者父类，被代理对象与代理对象一起实现相同的接口或者继承相同的父类。
+
+![image-20230307211256438](SpringFramework.assets/image-20230307211256438.png)
+
+![image-20230307211440248](SpringFramework.assets/image-20230307211440248.png)
+
+- 优点：在不修改目标对象的功能前提下，能通过代理对象对目标功能扩展
+- 缺点：因为代理对象需要与目标对象实现一样的接口，所以会有很多代理类，一旦接口增加方法，目标对象与代理对象都需要维护
+
+### 动态代理
+
+代理对象不需要实现接口，但是目标对象要实现接口，否则不能用动态代理
+
+代理对象的生成是利用JDK的API，动态的在内存中构建代理对象
+
+动态代理也叫做：JDK代理，接口代理
+
+JDK中生成代理对象的API：
+
+- java.lang.reflect.Proxy：https://docs.oracle.com/javase/8/docs/api/index.html
+
+![image-20230307212431978](SpringFramework.assets/image-20230307212431978.png)
+
+```java
+public class ProxyFactory {
+    //维护一个目标对象
+    private Object target;
+
+    public ProxyFactory(Object target) {
+        this.target = target;
+    }
+
+    //给目标对象生成一个代理对象
+    public Object getProxyInstance(){
+
+        /**
+         *     public static Object newProxyInstance(ClassLoader loader,
+         *                                           Class<?>[] interfaces,
+         *                                           InvocationHandler h)
+         *     1.ClassLoader loader:指定当前目标对象使用的类加载器，获取加载器的方法固定
+         *     2.Class<?>[] interfaces：目标对象实现的接口类型，使用泛型方法确认类型
+         *     3.InvocationHandler h：InvocationHandler是一个接口，h是他的匿名实现类。每个代理实例都有一个关联的调用处理程序。当我们通过动态代理对象调用一个方法时候，这个方法的调用就会被转发到实现InvocationHandler接口类的invoke方法来调用。
+         */
+        return Proxy.newProxyInstance(target.getClass().getClassLoader(),
+                target.getClass().getInterfaces(),
+                new InvocationHandler() {
+                    /**
+                     * proxy:代理类代理的真实代理对象com.sun.proxy.$Proxy0
+                     * method:我们所要调用某个对象真实的方法的Method对象
+                     * args:指代代理对象方法传递的参数
+                     */
+                    @Override
+                    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                        System.out.println("JDK代理开始");
+                        //通过反射机制调用目标对象的方法
+                        Object invoke = method.invoke(target, args);
+                        System.out.println("JDK代理提交");
+                        return invoke;
+                    }
+                });
+    }
+}
+```
+
+![image-20230307221628374](SpringFramework.assets/image-20230307221628374.png)
+
+测试方法：
+
+![image-20230307220650791](SpringFramework.assets/image-20230307220650791.png)
+
+> 需要追踪一下源码，好好理解
+
+
+
 ## 基本原理
 
 参考博客：https://zhuanlan.zhihu.com/p/37497663，https://blog.csdn.net/jjclove/article/details/124386972
@@ -298,7 +388,7 @@ AOP：Aspect Oriented Programming，面向切面编程
 - AOP全称（Aspect Oriented Programming）面向切片编程的简称。AOP面向方面编程基于IOC，是对OOP的有益补充；
 - AOP利用一种称为“横切”的技术，剖解开封装的对象内部，并将那些影响了 多个类的公共行为封装到一个可重用模块，并将其名为“Aspect”，即方面。所谓“方面”，简单地说，就是将那些与业务无关，却为业务模块所共同调用的 逻辑或责任封装起来，比如日志记录，便于减少系统的重复代码，降低模块间的耦合度，并有利于未来的可操作性和可维护性。
 - 实现AOP的技术，主要分为两大类：一是采用动态代理技术，利用截取消息的方式，对该消息进行装饰，以取代原有对象行为的执行；二是采用静态织入的方式，引入特定的语法创建“方面”，从而使得编译器可以在编译期间织入有关“方面”的代码。
-- Spring实现AOP：JDK动态代理和CGLIB代理 JDK动态代理：其代理对象必须是某个接口的实现，它是通过在运行期间创建一个接口的实现类来完成对目标对象的代理；其核心的两个类是InvocationHandler和Proxy。 CGLIB代理：实现原理类似于JDK动态代理，只是它在运行期间生成的代理对象是针对目标类扩展的子类。CGLIB是高效的代码生成包，底层是依靠ASM（开源的java字节码编辑类库）操作字节码实现的，性能比JDK强；需要引入包asm.jar和cglib.jar。使用AspectJ注入式切面和@AspectJ注解驱动的切面实际上底层也是通过动态代理实现的
+- Spring实现AOP：JDK动态代理和CGLIB代理。JDK动态代理：其代理对象必须是某个接口的实现，它是通过在运行期间创建一个接口的实现类来完成对目标对象的代理；其核心的两个类是InvocationHandler和Proxy。 CGLIB代理：实现原理类似于JDK动态代理，只是它在运行期间生成的代理对象是针对目标类扩展的子类。CGLIB是高效的代码生成包，底层是依靠ASM（开源的java字节码编辑类库）操作字节码实现的，性能比JDK强；需要引入包asm.jar和cglib.jar。使用AspectJ注入式切面和@AspectJ注解驱动的切面实际上底层也是通过动态代理实现的
 
 **AOP的作用：**
 
