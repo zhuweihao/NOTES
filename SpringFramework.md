@@ -375,9 +375,103 @@ public class ProxyFactory {
 
 > 需要追踪一下源码，好好理解
 
+### CGLIB代理
 
+静态代理和JDK代理模式都要求目标对象是实现一个接口，但是有时候目标对象只是一个单独的对象，并没有实现任何接口，这个时候可使用目标对象子类来实现代理，这就是CGLIB代理。
 
-## 基本原理
+CGLIB代理也叫做子类代理，它是内存中构建一个子类对象从而实现对目标对象功能扩展，有些书也将CGLIB代理归属到动态代理。
+
+CGLIB是一个强大的高性能的代码生成包，它可以在运行期扩展java类和实现Java接口，它广泛的被许多AOP框架使用，例如Spring AOP，实现方法拦截
+
+在AOP编程中如何选择代理模式：
+
+- 目标对象需要实现接口，用JDK代理
+- 目标对象不需要实现接口，用CGLIB代理
+
+CGLIB包的底层是通过使用字节码处理框架ASM来转换字节码并生成新的类
+
+在内存中动态构建子类，注意代理的类不能为final
+
+目标对象的方法如果为final/static，那么就不会被拦截，即不会执行目标对象额外的业务方法。
+
+> CGLIB原理：动态生成一个要代理类的子类，子类重写要代理的类的所有不是final的方法。在子类中采用方法拦截的技术拦截所有父类方法的调用，顺势织入横切逻辑。它比使用java反射的JDK动态代理要快。
+>
+> CGLIB底层：使用字节码处理框架ASM，来转换字节码并生成新的类。不鼓励直接使用ASM，因为它要求你必须对JVM内部结构包括class文件的格式和指令集都很熟悉。
+>
+> CGLIB缺点：对于final方法，无法进行代理。
+
+![image-20230308110229235](SpringFramework.assets/image-20230308110229235.png)
+
+```java
+public class ProxyFactory implements MethodInterceptor {
+
+    /**
+     * 维护一个目标对象
+     */
+    private Object target;
+
+    /**
+     * 构造器，传入一个被代理的对象
+     */
+    public ProxyFactory(Object target) {
+        this.target = target;
+    }
+
+    /**
+     * @return 返回一个代理对象，是target对象的代理对象
+     */
+    public Object getProxyInstance() {
+        //1.创建一个工具类
+        Enhancer enhancer = new Enhancer();
+        //2.设置父类
+        enhancer.setSuperclass(target.getClass());
+        //3.设置回调函数
+        enhancer.setCallback(this);
+        //4.创建子类对象
+        return enhancer.create();
+    }
+
+    /**
+     * 重写intercept方法，拦截父类方法调用
+     *
+     * @param o
+     * @param method
+     * @param objects
+     * @param methodProxy
+     * @return
+     * @throws Throwable
+     */
+    @Override
+    public Object intercept(Object o, Method method, Object[] objects, MethodProxy methodProxy) throws Throwable {
+        System.out.println("cglib代理模式开始");
+        Object invoke = method.invoke(target, objects);
+        System.out.println("cglib代理模式提交");
+        return invoke;
+    }
+}
+```
+
+![image-20230308102842592](SpringFramework.assets/image-20230308102842592.png)
+
+### 代理模式（Proxy）的变体
+
+#### 防火墙代理
+
+内网通过代理穿透防火墙，实现对公网的访问
+
+#### 缓存代理
+
+比如，当请求图片文件等资源时，先到缓存代理取，如果取到资源则结束，如果取不到资源再到公网或者数据库取，然后缓存
+
+#### 远程代理
+
+远程对象的本地代表，通过它可以把远程对象当本地对象来调用，远程代理通过网络和真正的远程对象沟通信息
+
+#### 同步代理
+
+主要使用在多线程编程中，完成多线程间同步工作
+
+## 基本概念
 
 参考博客：https://zhuanlan.zhihu.com/p/37497663，https://blog.csdn.net/jjclove/article/details/124386972
 
@@ -389,6 +483,8 @@ AOP：Aspect Oriented Programming，面向切面编程
 - AOP利用一种称为“横切”的技术，剖解开封装的对象内部，并将那些影响了 多个类的公共行为封装到一个可重用模块，并将其名为“Aspect”，即方面。所谓“方面”，简单地说，就是将那些与业务无关，却为业务模块所共同调用的 逻辑或责任封装起来，比如日志记录，便于减少系统的重复代码，降低模块间的耦合度，并有利于未来的可操作性和可维护性。
 - 实现AOP的技术，主要分为两大类：一是采用动态代理技术，利用截取消息的方式，对该消息进行装饰，以取代原有对象行为的执行；二是采用静态织入的方式，引入特定的语法创建“方面”，从而使得编译器可以在编译期间织入有关“方面”的代码。
 - Spring实现AOP：JDK动态代理和CGLIB代理。JDK动态代理：其代理对象必须是某个接口的实现，它是通过在运行期间创建一个接口的实现类来完成对目标对象的代理；其核心的两个类是InvocationHandler和Proxy。 CGLIB代理：实现原理类似于JDK动态代理，只是它在运行期间生成的代理对象是针对目标类扩展的子类。CGLIB是高效的代码生成包，底层是依靠ASM（开源的java字节码编辑类库）操作字节码实现的，性能比JDK强；需要引入包asm.jar和cglib.jar。使用AspectJ注入式切面和@AspectJ注解驱动的切面实际上底层也是通过动态代理实现的
+
+> AspectJ不是Spring组成部分，是一个独立的AOP框架，在开发中配合起来使用进行AOP操作较为方便
 
 **AOP的作用：**
 
@@ -402,21 +498,85 @@ AOP：Aspect Oriented Programming，面向切面编程
 
 **这里先给出一个比较专业的概念定义**：
 
-- `Aspect`（切面）： Aspect 声明类似于 Java 中的类声明，在 Aspect 中会包含着一些 Pointcut 以及相应的 Advice。
-
-- `Joint point`（连接点）：表示在程序中明确定义的点，典型的包括方法调用，对类成员的访问以及异常处理程序块的执行等等，它自身还可以嵌套其它 joint point。
-
-- `Pointcut`（切点）：表示一组 joint point，这些 joint point 或是通过逻辑关系组合起来，或是通过通配、正则表达式等方式集中起来，它定义了相应的 Advice 将要发生的地方。
-
+- `Aspect`（切面）： Aspect 声明类似于 Java 中的类声明，在 Aspect 中会包含着一些 Pointcut 以及相应的 Advice。**把增强应用到切入点的过程**
+- `Joint point`（连接点）：表示在程序中明确定义的点，典型的包括方法调用，对类成员的访问以及异常处理程序块的执行等等，它自身还可以嵌套其它 joint point。**类里面哪些方法可以被增强，这些方法称为连接点**
+- `Pointcut`（切点）：表示一组 joint point，这些 joint point 或是通过逻辑关系组合起来，或是通过通配、正则表达式等方式集中起来，它定义了相应的 Advice 将要发生的地方。**真正被增强的方法，称为切入点**
 - `Advice`（增强）：Advice 定义了在 `Pointcut` 里面定义的程序点具体要做的操作，它通过 before、after 和 around 来区别是在每个 joint point 之前、之后还是代替执行的代码。
-
 - `Target`（目标对象）：织入 `Advice` 的目标对象.。
-
-- `Weaving`（织入）：将 `Aspect` 和其他对象连接起来, 并创建 `Advice`d object 的过程
-
-
+- `Weaving`（织入）：将 `Aspect` 和其他对象连接起来, 并创建 `Advice` object 的过程
 
 ----------------
+
+![image-20230308114339556](SpringFramework.assets/image-20230308114339556.png)
+
+## 基于AspectJ实现AOP操作
+
+- 基于xml配置文件实现
+- 基于注解方式实现（常用）
+
+切入点表达式
+
+作用：知道对哪个类里面的哪个方法进行增强
+
+语法结构：execution(\[权限修饰符][返回类型]\[带类全路径的方法名称](\[参数列表]))
+
+#### 注解方式
+
+```java
+@Component
+@Aspect
+@Order(1)   //如果一个类有多个代理类，可以通过这个注解配置优先级，数字小的先执行
+public class TeacherProxy {
+    /**
+     * 相同的切入点可以进行抽取
+     */
+    @Pointcut(value = "execution(* com.zhuweihao.SpringFramework.dao.impl.TeacherDaoImpl.teach(..))")
+    public void pointCut(){}
+
+    @Before(value = "pointCut()")
+    public void before(){
+        System.out.println("before.........");
+    }
+    @After(value = "pointCut()")
+    public void after(){
+        System.out.println("after..........");
+    }
+    @Around(value = "pointCut()")
+    public void around(ProceedingJoinPoint proceedingJoinPoint) throws Throwable {
+        System.out.println("环绕之前。。。。。");
+        //被增强的方法执行
+        proceedingJoinPoint.proceed();
+        System.out.println("环绕之后。。。。。。");
+        throw new Exception();
+    }
+    @AfterReturning(value = "pointCut()")
+    public void afterReturning(){
+        System.out.println("afterReturning.......");
+    }
+    @AfterThrowing(value = "pointCut()")
+    public void afterThrowing(){
+        System.out.println("afterThrowing.........");
+    }
+}
+```
+
+配置类需要添加注解
+
+![image-20230308142907601](SpringFramework.assets/image-20230308142907601.png)
+
+#### AspectJ配置文件
+
+![image-20230308143818271](SpringFramework.assets/image-20230308143818271.png)
+
+
+
+# JdbcTemplate
+
+Spring框架对JDBC框架进行封装，方便实现对数据库的操作。
+
+
+
+
 
 
 
