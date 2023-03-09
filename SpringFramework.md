@@ -574,9 +574,58 @@ public class TeacherProxy {
 
 Spring框架对JDBC框架进行封装，方便实现对数据库的操作。
 
+```java
+@Repository
+public class FruitDaoImpl implements FruitDao {
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Override
+    public Fruit selectById(Integer id) {
+        String sql = "select * from Fruit where fid = ?";
+        return jdbcTemplate.queryForObject(sql,new BeanPropertyRowMapper<>(Fruit.class),id);
+    }
+
+    @Override
+    public void addFruit(Fruit fruit) {
+        String sql="insert into Fruit(fname,price,fcount,remark) values(?,?,?,?)";
+        jdbcTemplate.update(sql,fruit.getFname(),fruit.getFcount(),fruit.getPrice(),fruit.getRemark());
+    }
+
+    @Override
+    public void deleteById(Integer id) {
+        String sql="delete from Fruit where fid=?";
+        jdbcTemplate.update(sql,id);
+    }
+
+    @Override
+    public void updatePriceById(Integer id, Integer price) {
+        String sql="update Fruit set price=? where fid=?";
+        jdbcTemplate.update(sql,price,id);
+    }
+
+    @Override
+    public void updateBatch(List<Object[]> bathgArgs) {
+        String sql="update Fruit set price=? where fid=?";
+        jdbcTemplate.batchUpdate(sql,bathgArgs);
+    }
+}
+```
+
+# 事务操作
 
 
 
+事务是数据库操作最基本单元，逻辑上一组操作，要么都成功，如果有一个失败所有操作都失败。
+
+典型示例：银行转账。
+
+事务特性（ACID）：
+
+- 原子性：**Atomicity**，原子性是指事务是一个不可分割的工作单位，事务中的操作要么都发生，要么都不发生。
+- 一致性：**Consistency**，事务前后数据的完整性必须保持一致。
+- 隔离性：**Isolation**，事务的隔离性是多个用户并发访问数据库时，数据库为每一个用户开启的事务，不能被其他事务的操作数据所干扰，多个并发事务之间要相互隔离。
+- 持久性：**Durability**，持久性是指一个事务一旦被提交，它对数据库中数据的改变就是永久性的，接下来即使数据库发生故障也不应该对其有任何影响
 
 
 
