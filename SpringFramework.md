@@ -1022,50 +1022,9 @@ Oberver就是上面例子中的Observer
 
 
 
-## 基本概念
 
-![image-20230310211614575](SpringFramework.assets/image-20230310211614575.png)
-
-Spring 框架中包含的原始 Web 框架 Spring Web MVC 是专门为 Servlet API 和 Servlet 容器构建的。响应式 Web 框架 Spring WebFlux 是后来在5.0版本中添加的。它是完全非阻塞的，支持反应流背压，并运行在 Netty，Undertwow 和 Servlet 3.1 + 容器等服务器上。
-
-这两个 Web 框架都反映了它们源模块的名称(Spring-webmvc 和 Spring-webflow) ，并且在 Spring 框架中并存。每个模块都是可选的。应用程序可以使用其中一个模块，或者在某些情况下使用两个模块ーー例如，带有反应式 WebClient 的 Spring MVC 控制器。
-
-#### 异步非阻塞
-
-WebFlux是一种异步非阻塞的框架
-
-异步和同步：针对调用者，调用者发送请求，如果等着对方回应之后才去做其他事情就是同步，如果发送请求之后不等着对方回应就去做其他事情就是异步。
-
-阻塞和非阻塞：针对被调用者，被调用者收到请求之后，做完请求任务之后才给出反馈就是阻塞，收到请求之后马上给出反馈然后再去做其他事情就是非阻塞。
-
-#### webflux特点：
-
-- 反应式编程和非阻塞：反应和非阻塞通常不会使应用程序运行得更快。但在某些情况下，它们可以，例如，如果使用 WebClient 并行运行远程调用。总的来说，以非阻塞方式做事情需要更多的工作，这可能会略微增加所需的处理时间。
-
-  反应式和非阻塞性的主要预期好处是能够使用少量、固定数量的线程和更少的内存进行伸缩。这使得应用程序在负载下更具弹性，因为它们以更可预测的方式扩展。然而，为了观察这些好处，您需要一些延迟(包括慢速和不可预测的网络 I/O 的混合)。这就是反应堆开始显示其优势的地方，而且差异可能是巨大的。
-
-- 函数式编程：webflux中可以使用java8函数式编程方式实现路由请求
-
-#### Spring MVC or WebFlux?
-
-![image-20230310212535422](SpringFramework.assets/image-20230310212535422.png)
-
-- 两个框架都可以使用注解方式，都运行在Tomcat等容器中
-- SpringMVC采用命令式编程，WebFlux采用异步响应式编程
-
-举例：
-
-SpringCloud Gateway是基于Spring WebFlux的，因为网关要处理大量请求，需要异步非阻塞的框架。
 
 ## 响应式编程
-
-https://ebook.qicoder.com/spring-in-action-5th/di-san-bu-fen-xiang-ying-shi-spring.html
-
-
-
-https://blog.csdn.net/qq_37958845/article/details/119275357
-
---------------
 
 ### 基本介绍
 
@@ -1077,6 +1036,8 @@ https://blog.csdn.net/qq_37958845/article/details/119275357
 #### 传统 Web 请求
 
 在服务 A（服务消费者）调用服务 B（服务提供者）场景中，当服务 A 向服务 B 发送 HTTP 请求时，线程 A 只有在发起请求和响应结果的一小部分时间内在有效使用 CPU，而更多的时间则只是在 阻塞式 地等待来自服务 B 中线程的处理结果。显然，整个过程的 CPU 利用效率是很低的，很多时间线程被浪费在了 I/O 阻塞上，无法执行其他的处理过程，如下图所示：
+
+![服务交互](SpringFramework.assets/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzM3OTU4ODQ1,size_16,color_FFFFFF,t_70.png)
 
 同理，在一个服务内部（以经典的 Web 分层服务为例），也存在着这种阻塞的情况， Controller 层访问 Service 层，Service 层访问 Repository 数据层，数据层访问数据库，然后再依次返回。在这个过程中，每一步的操作过程都存在着前面描述的线程等待问题。也就是说，整个技术栈中的每一个环节都可能是同步阻塞的。
 
@@ -1111,6 +1072,8 @@ java9中新添加的类：https://docs.oracle.com/javase/9/docs/api/java/util/co
 发布-订阅模式，可以认为是对观察者模式的一种改进。因为观察者模式，容易和场景绑定（如：一个场景一个观察者模式），而发布-订阅模式具有更强的通用性。
 在这一模式中，发布者和订阅者之间可以没有直接的交互，而是通过发送事件到事件处理平台的方式来完成整合，如下图所示：
 
+![在这里插入图片描述](SpringFramework.assets/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzM3OTU4ODQ1,size_16,color_FFFFFF,t_70-167861003394658.png)
+
 
 了解了这两种模式，我们再来看有什么方式可以处理前面提到的阻塞问题？
 如果将获取数据这件事情，通过发布订阅来实现，是不是就可以处理阻塞问题？在一个服务的内部，从 Web 服务层到数据访问层，再到数据库的整个调用链路，同样可以采用发布-订阅模式进行重构。这时候，我们希望当数据库中的数据一有变化（事件）就通知上游组件（通知机制），而不是上游组件通过主动拉取数据的方式来获取数据（阻塞）。
@@ -1143,7 +1106,9 @@ java9中新添加的类：https://docs.oracle.com/javase/9/docs/api/java/util/co
 在这种情况下，因为消费者消费数据没有任何压力，也就不需要进行流量的控制。
 
 （2）生产者生产数据的速率大于消费者消费数据的场景
-这种情况比较复杂，因为消费者可能因为无法处理过多的数据而发生崩溃。针对这种情况的一种常见解决方案是在生产者和消费者之间添加一种类似于消息队列的机制。我们知道队列具有存储并转发的功能，所以可以由它来进行一定的流量控制，效果如下图所示。
+这种情况比较复杂，因为消费者可能因为无法处理过多的数据而发生崩溃。针对这种情况的一种常见解决方案是在生产者和消费者之间添加一种类似于消息队列的机制。我们知道队列具有存储并转发的功能，所以可以由它来进行一定的流量控制，效果如下图所示:
+
+![在这里插入图片描述](SpringFramework.assets/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzM3OTU4ODQ1,size_16,color_FFFFFF,t_70-167861004729961.png)
 
 那么流量控制问题的关键就转变为了如何设计一种合适的队列？通常，我们可以选择三种不同类型的队列来分别支持不同的功能特性。
 
@@ -1171,7 +1136,17 @@ java9中新添加的类：https://docs.oracle.com/javase/9/docs/api/java/util/co
 
 ### 响应式流规范
 
-#### 核心接口
+Reactive Streams 是 2013 年底由 Netflix、Lightbend 和 Pivotal（Spring 背后的公司）的工程师发起的一项计划。响应式流旨在为无阻塞异步流处理提供一个标准。
+
+我们已经谈到了响应式编程的异步特性；它使我们能够并行执行任务以获得更大的可伸缩性。Backpressure（[如何形象的描述反应式编程中的背压(Backpressure)机制？](https://www.zhihu.com/question/49618581/answer/237078934) ）是一种手段，通过对用户愿意处理的数据量设定限制，数据消费者可以避免被生产速度过快的数据淹没。
+
+> **Java Streams** 与 **Reactive Streams** 对比
+>
+> 在 Java 流和响应式流之间有很大的相似性。首先，它们的名字中都含有 Streams。它们也都为处理数据提供函数式接口。事实上，稍后当学到容器的时候，你会看到，其实它们有很多共同操作。
+>
+> 然而，Java 流通常是同步的，同时只能处理有限数据集。它们本质上是使用函数式进行集合迭代的一种手段。
+>
+> 响应式流支持任何大小的数据集，包括无限数据集的异步处理。它们使实时处理数据成为了可能。
 
 响应式流的规范可以通过四个接口定义来概括：Publisher，Subscriber，Subscription 和 Processor。Publisher 为每一个 Subscription 的 Subscriber 生产数据。Publisher 接口声明了一个 subscribe() 方法，通过这个方法 Subscriber 可以订阅 Publisher：
 
@@ -1236,7 +1211,7 @@ Copy
 
 正如你所看到的，响应式流规范相当地简单。关于如何从 Publisher 开始建立起一个数据处理的通道，这也是一件很容易的事情了，通过将数据不输入或是输入到多个 Processor 中，然后将最终结果传递到 Subscriber 中就行了。
 
-### Reactor
+## Reactor
 
 Reactor有两个核心类，Mono和Flux，这两个类实现接口Publisher，提供丰富操作符。Flux对象实现发布者，返回N个元素；Mono实现翻发布者，返回0或者1个元素。
 
@@ -1248,14 +1223,848 @@ Flux和Mono都是数据流的发布者，使用Flux和Mono都可以发出三种�
 
 错误信号和完成信号都代表终止信号，终止信号用于告诉订阅者数据流结束了，错误信号终止数据流的同时会把错误信息传递给订阅者
 
+错误信号和完成信号不可以共存
+
+![图 10.1 Flux 基本流的可视化弹珠图](SpringFramework.assets/tu-10.1.jpg)
+
+![图 10.2 Flux 基本流的可视化弹珠图](SpringFramework.assets/10.2.jpg)
+
+#### 添加Reactor依赖
+
+让我们开始使用 Reactor 吧，把一下依赖添加到项目构建中：
+
+```xml
+<dependency>
+    <groupId>io.projectreactor</groupId>
+    <artifactId>reactor-core</artifactId>
+</dependency>
+```
+
+Reactor 还提供了测试支持。你会写在你的 Reactor 代码周围写很多的测试，所以你肯定会想把这个依赖添加到项目构建中：
+
+```xml
+<dependency>
+    <groupId>io.projectreactor</groupId>
+    <artifactId>reactor-test</artifactId>
+    <scope>test</scope>
+</dependency>
+```
+
+我假定你要向 Spring Boot 项目中添加这些依赖，它可以为你处理的依赖管理，所以没有必要指定依赖的 \<version> 元素。但是如果你想在非 Spring Boot 项目中使用 Reactor，那么你需要在构建中设置 Reactor 的 BOM（物料清单）。下面的依赖管理条目增加了 Reactor 的 Bismuth-RELEASE 到构建中：
+
+```xml
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-bom</artifactId>
+            <version>Bismuth-RELEASE</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+```
+
+现在，Reactor 在你的项目构建中了，可以使用 Mono 和 Flux 开始创建响应式管道了。
+
+#### 创建响应式类型
+
+##### 从对象创建
+
+如果想从 Flux 或是 Mono 创建一个或多个对象，可以 Flux 或 Mono 中的静态方法 just() 去创建一个响应式类型，其中的数据由这些对象驱动。例如，下面这个测试方法就是使用 5 个 String 对象来创建一个 Flux：
+
+```java
+@Test
+public void createAFlux_just() {
+    Flux<String> fruitFlux = Flux
+        .just("Apple", "Orange", "Grape", "Banana", "Strawberry");
+}
+```
+
+这样就创建了一个 Flux，但它没有订阅者。要是没有订阅者，数据不会流动。以花园软管的思路进行类比，你已经把软管接到出水口了，另一端就是从自来水公司流出的水。但是水不会流动，除非你打开水龙头。对响应式类型的订阅就是打开数据流的方式。
+
+要添加一个订阅者，可以调用 Flux 中的 subscribe() 方法：
+
+```java
+fruitFlux.subscribe(
+    f -> System.out.println("Here's some fruit: " + f);
+);
+```
+
+subscribe() 中的 lambda 表达式实际上是 java.util.Consumer，用于创建响应式流的 Subscriber。由于调用了 subscribe() 方法，数据开始流动了。在这个例子中，不存在中间操作，因此数据直接从 Flux 流到了 Subscriber。
+
+为了在运行过程中观察响应式类型，一个好方法就是将 Flux 或 Mono 打印到控制台里面。但是，测试 Flux 或 Mono 更好的方式是使用 Reactor 中的 StepVerifier。给定一个 Flux 或 Mono，StepVerifier 订阅这个响应式类型，然后对流中流动的数据应用断言，最后验证流以预期方式完成。
+
+例如，为了验证规定的数据流经 fruitFlux，可以写一个测试，如下所示：
+
+```java
+StepVerifier.create(fruitFlux)
+    .expectNext("Apple")
+    .expectNext("Orange")
+    .expectNext("Grape")
+    .expectNext("Banana")
+    .expectNext("Strawberry")
+    .verifyComplete();
+```
+
+这个例子中，StepVerifier 订阅了 Flux，然后对每一个匹配到的期望的水果名字做断言。最后，它验证了 Strawberry 是由 Flux 生成的，对 Flux 的验证完毕。
+
+##### 从集合创建
+
+Flux 也可从任何的集合创建，如 Iterable 或是 Java Stream。使用弹珠图绘制了这是如何运行的：
+
+![图 10.3 Flux 可以从数组、Iterable 或 Stream 中创建。](SpringFramework.assets/10.3-167860870474815.png)
+
+为了从数组创建一个 Flux，调用静态方法 fromArray()，然后将数组作为数据源传入：
+
+```java
+@Test
+public void createAFlux_fromArray() {
+    String[] fruits = new String[] {
+        "Apple", "Orange", "Grape", "Banana", "Strawberry" };
+
+    Flux<String> fruitFlux = Flux.fromArray(fruits);
+    StepVerifier.create(fruitFlux)
+        .expectNext("Apple")
+        .expectNext("Orange")
+        .expectNext("Grape")
+        .expectNext("Banana")
+        .expectNext("Strawberry")
+        .verifyComplete();
+}
+Copy
+```
+
+因为当你从对象列表中创建 Flux 的时候，源数组包含了你使用到的相同的水果名称，所以被 Flux 所命中的数据有相同的值。这样一来，你就在验证这个 Flux 之前使用相同的 StepVerifier。
+
+如果你需要从 java.util.List、java.util.Set 或任何实现了 java.lang.Iterable 接口的类创建 Flux，你可以将它传入静态方法 fromIterable() 中：
+
+```java
+@Test
+public void createAFlux_fromIterable() {
+    List<String> fruitList = new ArrayList<>();
+    fruitList.add("Apple");
+    fruitList.add("Orange");
+    fruitList.add("Grape");
+    fruitList.add("Banana");
+    fruitList.add("Strawberry");
+    Flux<String> fruitFlux = Flux.fromIterable(fruitList);
+    // ... verify steps
+}
+```
+
+或是，如果你突然想要把你用得顺手的 Java Stream 作为 Flux 的源，你将会用到 fromStream() 方法：
+
+```java
+@Test
+public void createAFlux_fromStream() {
+    Stream<String> fruitStream =
+        Stream.of("Apple", "Orange", "Grape", "Banana", "Strawberry");
+    Flux<String> fruitFlux = Flux.fromStream(fruitStream);
+    // ... verify steps
+}
+```
+
+这里还是一样地使用 StepVerifier 去验证需要发布到 Flux 的数据。
+
+##### 生成flux数据
+
+有时你没有任何数据可供使用，只需要使用 Flux 作为计数器，发出一个随每个新值递增的数字。要创建计数器 Flux，可以使用静态 range() 方法。图展示了 range() 是如何工作的。
+
+![图 10.4 从范围创建 Flux 会导致消息的计数器发布](SpringFramework.assets/10.4.png)
+
+下面的测试方法展示了如何创建一个范围的 Flux：
+
+```java
+@Test
+public void createAFlux_range() {
+    Flux<Integer> intervalFlux = Flux.range(1, 5);
+    StepVerifier.create(intervalFlux)
+        .expectNext(1)
+        .expectNext(2)
+        .expectNext(3)
+        .expectNext(4)
+        .expectNext(5)
+        .verifyComplete();
+}
+```
+
+在本例中，创建的范围 Flux 的起始值为 1，结束值为 5。StepVerifier 证明它将发布五个项目，即从 1 到 5 的整数。
+
+另一个类似 range() 的 Flux 创建方法是 interval()。与 range() 方法一样，interval() 创建一个发出递增值的 Flux。但是 interval() 的特殊之处在于，你不必给它一个起始值和结束值，而是指定一个持续时间或一个值的发出频率。图展示了 interval() 创建方法的弹珠图。
+
+![图 10.5 从一个区间创建的 Flux 周期性地发布条目](SpringFramework.assets/10.5.png)
+
+例如，可以使用静态的 interval() 方法来创建每秒发送一个值的 Flux，如下所示：
+
+```java
+@Test
+public void createAFlux_interval() {
+    Flux<Long> intervalFlux = Flux.interval(Duration.ofSeconds(1)).take(5);
+    StepVerifier.create(intervalFlux)
+        .expectNext(0L)
+        .expectNext(1L)
+        .expectNext(2L)
+        .expectNext(3L)
+        .expectNext(4L)
+        .verifyComplete();
+}
+```
+
+请注意，间隔 Flux 发出的值以 0 开始，并在每个连续项上递增。另外，由于 interval() 没有给定最大值，因此它可能永远运行。因此，还可以使用 take() 操作将结果限制为前 5 个条目。
+
+#### 响应式类型结合
+
+##### **合并响应式类型**
+
+假设你有两个 Flux 流，并需要建立一个汇聚结果的 Flux，它会因为能够得到上流的 Flux 流，所以能够产生数据。为了将一个 Flux 与另一个合并，可以使用 mergeWith() 操作，如在下图展示的弹珠图一样：
+
+![图 10.6 合并两个 Flux 会将它们的消息交织成一个新的 Flux](SpringFramework.assets/10.6.png)
+
+例如，假设第一个 Flux 其值是电视和电影人物的名字，第二个 Flux 其值是食品的名称。下面的测试方法将展示如何使用 mergeWith() 方法合并两个 Flux 对象：
+
+```java
+@Test
+public void mergeFluxes() {
+    Flux<String> characterFlux = Flux
+        .just("Garfield", "Kojak", "Barbossa")
+        .delayElements(Duration.ofMillis(500));
+
+    Flux<String> foodFlux = Flux
+        .just("Lasagna", "Lollipops", "Apples")
+        .delaySubscription(Duration.ofMillis(250))
+        .delayElements(Duration.ofMillis(500));
+
+    Flux<String> mergedFlux = characterFlux.mergeWith(foodFlux);
+
+    StepVerifier.create(mergedFlux)
+        .expectNext("Garfield")
+        .expectNext("Lasagna")
+        .expectNext("Kojak")
+        .expectNext("Lollipops")
+        .expectNext("Barbossa")
+        .expectNext("Apples")
+        .verifyComplete();
+}
+```
+
+通常情况下，Flux 会尽可能快的快地发送数据。因此，需要在创建 Flux 的时候使用 delayElements() 操作，用来将数据发送速度减慢 —— 每 0.5s 发送一个数据。此外，你将 delaySubscription() 操作应用于 foodFlux，使得它在延迟 250ms 后才会发送数据，因此 foodFlux 将会在 characterFlux 之后执行。
+
+合并这两个 Flux 对象后，新的合并后的 Flux 被创建。当 StepVerifier 订阅合并后的 Flux 时，它会依次订阅两个 Flux 源。
+
+合并后的 Flux 发出的数据的顺序，与源发出的数据的时间顺序一致。由于两个 Flux 都被设置为固定频率发送数据，因此值会通过合并后的 Flux 交替出现 —— character...food...character...food 一直这样下去。如何其中任何一个 Flux 的发送时间被修改了的话，你可能会看到 2 个 charater 跟在 1 个 food 后面或是 2 个 food 跟在 1 个 character 后面的情况。
+
+因为 mergeWith() 不能保证源之间的完美交替，所以可能需要考虑使用 zip() 操作。当两个 Flux 对象压缩在一起时，会产生一个新的 Flux，该 Flux 生成一个元组，其中元组包含来自每个源 Flux 的一个项。下图说明了如何将两个 Flux 对象压缩在一起。
+
+![图 10.7 压缩两个 Flux 为一个 Flux](SpringFramework.assets/10.7.png)
+
+为了看看 zip() 操作的执行情况，参考一下下面的测试方法，它把 character Flux 和 food Flux 压缩在了一起：
+
+```java
+@Test
+public void zipFluxes() {
+    Flux<String> characterFlux = Flux.just("Garfield", "Kojak", "Barbossa");
+    Flux<String> foodFlux = Flux.just("Lasagna", "Lollipops", "Apples");
+
+    Flux<Tuple2<String, String>> zippedFlux = Flux.zip(characterFlux, foodFlux);
+
+    StepVerifier.create(zippedFlux)
+        .expectNextMatches(p ->
+            p.getT1().equals("Garfield") &&
+            p.getT2().equals("Lasagna"))
+        .expectNextMatches(p ->
+            p.getT1().equals("Kojak") &&
+            p.getT2().equals("Lollipops"))
+        .expectNextMatches(p ->
+            p.getT1().equals("Barbossa") &&
+            p.getT2().equals("Apples"))
+        .verifyComplete();
+}
+```
+
+注意，与 mergeWith() 不同的是，zip() 操作是一个静态的创建操作，通过它创建的 Flux 使 character 和 food 完美对齐。从压缩后的 Flux 发送出来的每个项目都是 Tuple2（包含两个对象的容器），其中包含每一个源 Flux 的数据。
+
+如果你不想使用 Tuple2，而是想用一些使用其他类型，你可以提供给 zip() 你想产生任何对象的 Function 接口。
+
+![图 10.8 zip 操作的另一种形式导致从每个传入 Flux 的一个元素创建的消息 Flux](SpringFramework.assets/10.8.png)
+
+例如，以下的试验方法说明了如何压缩的 character Flux 和 food Flux，使得它产生 String 类型的的 Flux 对象：
+
+```java
+@Test
+public void zipFluxesToObject() {
+    Flux<String> characterFlux = Flux.just("Garfield", "Kojak", "Barbossa");
+    Flux<String> foodFlux = Flux.just("Lasagna", "Lollipops", "Apples");
+
+    Flux<String> zippedFlux = Flux.zip(characterFlux, foodFlux,
+                                   (c, f) -> c + " eats " + f);
+
+    StepVerifier.create(zippedFlux)
+        .expectNext("Garfield eats Lasagna")
+        .expectNext("Kojak eats Lollipops")
+        .expectNext("Barbossa eats Apples")
+        .verifyComplete();
+}
+```
+
+给 zip() 的 Function 接口（这里给出一个 lambda 表达式）简单地把两个值连接成一句话，由压缩后的 Flux 进行数据发送。
+
+##### **选择第一个响应式类型进行发布**
+
+假设你有两个 Flux 对象，你只是想创建一个新的发送从第一个 Flux 产生值的 Flux，而不是将两个 Flux 合并在一起。如图所示，first() 操作选择两个 Flux 对象的第一个对象然后输出它的值。
+
+![图 10.9 第一个操作选择第一个 Flux 来发送消息，然后仅从该 Flux 生成消息](SpringFramework.assets/10.9.png)
+
+下面的测试方法创建一个 fast Flux 和 slow Flux（这里的 “slow” 的意思是它在订阅之后 100ms 才发布数据）。通过使用 first()，它创建了一个新的 Flux，将只会发布从第一个源 Flux 发布的数据：
+
+(译者注：在 reactor 3.4 版本中，first() 方法已被废弃，并将在 3.5 版本中被移除，替代方法是 firstWithSignal()，选择第一个发出 Signal 的 Flux 对象)
+
+```java
+@Test
+public void firstFlux() {
+    Flux<String> slowFlux = Flux.just("tortoise", "snail", "sloth")
+        .delaySubscription(Duration.ofMillis(100));
+    Flux<String> fastFlux = Flux.just("hare", "cheetah", "squirrel");
+
+    // reactor 3.5: Flux<String> firstFlux = Flux.firstWithSignal(slowFlux, fastFlux);
+    Flux<String> firstFlux = Flux.first(slowFlux, fastFlux);
+
+    StepVerifier.create(firstFlux)
+        .expectNext("hare")
+        .expectNext("cheetah")
+        .expectNext("squirrel")
+        .verifyComplete();
+}
+```
+
+在这种情况下，因为在 fast Flux 已经开始发布后 100ms，slow Flux 才开始发布数据，这样导致新创建的 Flux 将完全忽略 slow Flux，而只发布 fast flux 中的数据。
+
+#### 转换和过滤响应式流
+
+当数据流过 stream，你可能需要过滤或是修改一些值。在本节中，我们将看到的是转换和过滤流过响应式流中的数据。
+
+##### **从响应式类型中过滤数据**
+
+当数据从 Flux 中流出时，过滤数据的最基本方法之一就是简单地忽略前几个条目。如下图所示，skip() 操作正是这样做的。
+
+![图 10.10 skip 操作在将剩余消息传递给结果 Flux 之前跳过指定数量的消息](SpringFramework.assets/10.10.png)
+
+给定一个包含多个条目的 Flux，skip() 操作将创建一个新的 Flux，该 Flux 在从源 Flux 发出剩余项之前跳过指定数量的项。下面的测试方法演示如何使用 skip()：
+
+```java
+@Test
+public void skipAFew() {
+    Flux<String> skipFlux = Flux.just(
+        "one", "two", "skip a few", "ninety nine", "one hundred")
+        .skip(3);
+
+    StepVerifier.create(skipFlux)
+        .expectNext("ninety nine", "one hundred")
+        .verifyComplete();
+}
+```
+
+在本例中，有五个字符串项的流。对该流调用 skip(3) 将生成一个新的流，该流跳过前三个项，并且只发布最后两个项。
+
+你也许不是想跳过特定数量的项目，而是需要过一段时间再跳过前几个项目。skip() 操作的另一种形式是生成一个流，该流在从源流发出项之前等待一段指定的时间。
+
+![图 10.11 skip 操作的另一种形式是在将消息传递到结果 Flux 之前等待一段时间](SpringFramework.assets/10.11.png)
+
+下面的测试方法使用 skip() 创建一个在发出任何值之前等待 4 秒的 Flux。由于该 Flux 是从项之间具有 1 秒延迟（使用 delayElements()）的 Flux 创建的，因此只会发出最后两个项：
+
+```java
+@Test
+public void skipAFewSeconds() {
+    Flux<String> skipFlux = Flux.just(
+        "one", "two", "skip a few", "ninety nine", "one hundred")
+        .delayElements(Duration.ofSeconds(1))
+        .skip(Duration.ofSeconds(4));
+
+    StepVerifier.create(skipFlux)
+        .expectNext("ninety nine", "one hundred")
+        .verifyComplete();
+}
+```
+
+你已经看到了 take() 操作的一个例子，但是根据 skip() 操作，take() 可以看作是 skip() 的反面。skip() 跳过前几个项，take() 只发出前几个项（如图 10.12 所示）：
+
+```java
+@Test
+public void take() {
+    Flux<String> nationalParkFlux = Flux.just(
+        "Yellowstone", "Yosemite", "Grand Canyon","Zion", "Grand Teton")
+        .take(3);
+
+    StepVerifier.create(nationalParkFlux)
+        .expectNext("Yellowstone", "Yosemite", "Grand Canyon")
+        .verifyComplete();
+}
+```
+
+![图 10.12 take 操作只传递来自传入 Flux 的前几个消息，然后取消订阅](SpringFramework.assets/10.12.png)
+
+与 skip() 一样，take() 也有一个基于持续时间而不是项目计数的可选项。它会在一段时间之后，将接收并发出与通过源 Flux 一样多的项。如图 10.13 所示：
+
+![图 10.13 take 操作的另一种形式是在某个时间过去后，将消息传递给结果 Flux](SpringFramework.assets/10.13.png)
+
+以下测试方法使用 take() 的替代形式在订阅后的前 3.5 秒内发出尽可能多的项：
+
+```java
+@Test
+public void take() {
+    Flux<String> nationalParkFlux = Flux.just(
+        "Yellowstone", "Yosemite", "Grand Canyon","Zion", "Grand Teton")
+        .delayElements(Duration.ofSeconds(1))
+        .take(Duration.ofMillis(3500));
+
+    StepVerifier.create(nationalParkFlux)
+        .expectNext("Yellowstone", "Yosemite", "Grand Canyon")
+        .verifyComplete();
+}
+```
+
+skip() 和 take() 操作可以看作是基于计数或持续时间的筛选条件的操作。对于更通用的 Flux 值过滤，会发现filter() 操作非常有用。
+
+给定一个决定一个项是否通过 Flux 的 Predicate，filter() 操作允许你根据需要的任何条件有选择地发布。下图中的弹珠图显示了 filter() 的工作原理。
+
+![图 10.14 传入的 Flux 可以被过滤，以便生成的 Flux 只接收与给定谓词匹配的消息](SpringFramework.assets/10.14.png)
+
+要查看 filter() 的运行情况，请考虑以下测试方法：
+
+```java
+@Test
+public void filter() {
+    Flux<String> nationalParkFlux = Flux.just(
+        "Yellowstone", "Yosemite", "Grand Canyon","Zion", "Grand Teton")
+        .filter(np -> !np.contains(" "));
+
+    StepVerifier.create(nationalParkFlux)
+        .expectNext("Yellowstone", "Yosemite", "Zion")
+        .verifyComplete();
+}
+```
+
+这里，filter() 被赋予一个 Predicate，它只接受没有空格的 String。因此，“Grand Canyon” 和 “Grand Teton” 被过滤掉。
+
+也许你需要过滤的是你已经收到的任何项目。distinct() 操作产生一个只发布源 Flux 中尚未发布的项的 Flux。
+
+![图 10.15 distinct 操作过滤掉所有重复的消息](SpringFramework.assets/10.15.png)
+
+在下面的测试中，只有唯一的 String 值将从不同的 Flux 中发出：
+
+```java
+@Test
+public void distinct() {
+    Flux<String> animalFlux = Flux.just(
+        "dog", "cat", "bird", "dog", "bird", "anteater")
+        .distinct();
+
+    StepVerifier.create(animalFlux)
+        .expectNext("dog", "cat", "bird", "anteater")
+        .verifyComplete();
+}
+```
+
+尽管 “dog” 和 “bird” 分别从源 Flux 中发布两次，但在 distinct Flux 中只发布一次。
+
+##### **映射响应式数据**
+
+对于 Flux 或 Mono，最常用的操作之一是将已发布的项转换为其他形式或类型。Reactor 为此提供 map() 和flatMap() 操作。
+
+map() 操作会创建一个 Flux，该 Flux 在重新发布之前，按照给定函数对其接收的每个对象执行指定的转换。下图说明了 map() 操作的工作原理。
+
+![图 10.16 map 操作在结果 Flux 上执行将传入消息转换为新消息](SpringFramework.assets/10.16.png)
+
+在以下测试方法中，表示篮球运动员的 String 值的 Flux 映射到 Player 对象的新 Flux：
+
+```java
+@Test
+public void map() {
+    Flux<Player> playerFlux = Flux
+        .just("Michael Jordan", "Scottie Pippen", "Steve Kerr")
+        .map(n -> {
+            String[] split = n.split("\\s");
+            return new Player(split[0], split[1]);
+        });
+
+    StepVerifier.create(playerFlux)
+        .expectNext(new Player("Michael", "Jordan"))
+        .expectNext(new Player("Scottie", "Pippen"))
+        .expectNext(new Player("Steve", "Kerr"))
+        .verifyComplete();
+}
+```
+
+给 map() 的 Function 接口（作为 lambda）将传入 String 以空格进行拆分，并使用生成的字符串数组创建 Player 对象。虽然用 just() 创建的流携带的是 String 对象，但是由 map() 生成的流携带的是 Player 对象。
+
+关于 map() 的重要理解是，映射是同步执行的，因为每个项都是由源 Flux 发布的。如果要异步执行映射，应考虑使用 flatMap() 操作。
+
+flatMap() 操作需要一些思考和实践才能变得很熟练。如图所示，flatMap() 不是简单地将一个对象映射到另一个对象，而是将每个对象映射到一个新的 Mono 或 Flux。Mono 或 Flux 的结果被压成一个新的 Flux。当与subscribeOn() 一起使用时，flatMap() 可以释放 Reactor 类型的异步能力。
+
+![图 10.17 转换映射操作使用中间 Flux 来执行转换，从而允许异步转换](SpringFramework.assets/10.17.png)
+
+下面的测试方法展示了 flatMap() 和 subscribeOn() 的用法：
+
+```java
+@Test
+public void flatMap() {
+    Flux<Player> playerFlux = Flux
+        .just("Michael Jordan", "Scottie Pippen", "Steve Kerr")
+        .flatMap(n -> Mono.just(n).map(p -> {
+            String[] split = p.split("\\s");
+            return new Player(split[0], split[1]);
+        })
+        .subscribeOn(Schedulers.parallel())
+        );
+
+    List<Player> playerList = Arrays.asList(
+        new Player("Michael", "Jordan"),
+        new Player("Scottie", "Pippen"Pippen"),
+        new Player("Steve", "Kerr"));
+
+    StepVerifier.create(playerFlux)
+        .expectNextMatches(p -> playerList.contains(p))
+        .expectNextMatches(p -> playerList.contains(p))
+        .expectNextMatches(p -> playerList.contains(p))
+        .verifyComplete();
+}
+```
+
+请注意，flatMap() 被赋予一个 lambda 函数，该函数将传入 String 转换为 String 类型的 Mono。然后对 Mono 应用 map() 操作，将 String 转换为 Player。
+
+如果你停在那里，产生的 Flux 将携带 Player 对象，以与 map() 示例相同的顺序同步生成。但是对 Mono 做的最后一件事是调用 subscribeOn() 来指示每个订阅应该在一个并行线程中进行。因此，可以异步和并行地执行多个传入 String 对象的映射操作。
+
+尽管 subscribeOn() 的名称与 subscribe() 类似，但它们却截然不同。subscribe() 是一个动词，它订阅一个响应式流并有效地将其启动，而 subscribeOn() 则更具描述性，它指定了应该 *如何* 并发地处理订阅。Reactor 不强制任何特定的并发模型；通过 subscribeOn() 可以使用 Schedulers 程序中的一个静态方法指定要使用的并发模型。在本例中，使用了 parallel()，它是使用固定大小线程池的工作线程（大小与 CPU 内核的数量一样）。但是调度程序支持多个并发模型，如下表所示：
+
+| Schedulers 方法 | 描述                                                         |
+| :-------------- | :----------------------------------------------------------- |
+| .immediate()    | 在当前线程中执行订阅                                         |
+| .single()       | 在单个可重用线程中执行订阅，对所有调用方重复使用同一线程     |
+| .newSingle()    | 在每个调用专用线程中执行订阅                                 |
+| .elastic()      | 在从无限弹性池中提取的工作进程中执行订阅，根据需要创建新的工作线程，并释放空闲的工作线程（默认情况下 60 秒） |
+| .parallel()     | 在从固定大小的池中提取的工作进程中执行订阅，该池的大小取决于 CPU 核心的数量。 |
+
+使用 flatMap() 和 subscribeOn() 的好处是，可以通过将工作分成多个并行线程来增加流的吞吐量。但由于这项工作是并行完成的，无法保证先完成哪项工作，因此无法知道产生的 Flux 中排放的项目的顺序。因此，StepVerifier 只能验证发出的每个项是否存在于 Player 对象的预期列表中，并且在 Flux 完成之前将有三个这样的项。
+
+##### **在响应式流上缓冲数据**
+
+在处理流经 Flux 的数据的过程中，你可能会发现将数据流分解成比特大小的块是有帮助的。buffer() 操作（如图所示）可以解决这个问题。
+
+![图 10.18 缓冲区操作会产生一个给定最大大小的 List Flux，这些 List 是从传入的 Flux 中收集的](SpringFramework.assets/10.18.png)
+
+给定一个 String 值的 Flux，每个值都包含一个水果的名称，你可以创建一个新的 List 集合的 Flux，其中每个 List 的元素数不超过指定的数目：
+
+```java
+@Test
+public void buffer() {
+    Flux<String> fruitFlux = Flux.just(
+        "apple", "orange", "banana", "kiwi", "strawberry");
+
+    Flux<List<String>> bufferedFlux = fruitFlux.buffer(3);
+
+    StepVerifier
+        .create(bufferedFlux)
+        .expectNext(Arrays.asList("apple", "orange", "banana"))
+        .expectNext(Arrays.asList("kiwi", "strawberry"))
+        .verifyComplete();
+}
+```
+
+在这种情况下，String 元素的 Flux 被缓冲到一个 List 集合的新 Flux 中，每个 List 集合包含的项不超过三个。因此，发出 5 个 String 的原始 Flux 将转换为发出两个List 集合的 Flux，一个包含 3 个水果，另一个包含 2 个水果。
+
+那又怎么样？将值从响应式 Flux 缓冲到非响应式 List 集合似乎适得其反。但是，当将buffer() 与 flatMap() 结合使用时，它可以并行处理每个 List 集合：
+
+```java
+Flux.just("apple", "orange", "banana", "kiwi", "strawberry")
+    .buffer(3)
+    .flatMap(x -> 
+         Flux.fromIterable(x)
+             .map(y -> y.toUpperCase())
+             .subscribeOn(Schedulers.parallel())
+             .log()
+    ).subscribe();
+```
+
+在这个新示例中，仍然将 5 个 String 值的 Flux 缓冲到 List 集合的新 Flux 中，然后将 flatMap() 应用于 List 集合的 Flux。这将获取每个 List 缓冲区并从其元素创建一个新的 Flux，然后对其应用 map() 操作。因此，每个缓冲 List 在单独的线程中进一步并行处理。
+
+为了证明它是有效的，我还包含了一个要应用于每个子 Flux 的 log() 操作。log() 操作只记录所有的 Reactor Streams 事件，这样你就可以看到真正发生了什么。因此，以下条目将写入日志（为了简洁起见，删除了时间组件）：
+
+```text
+[main] INFO reactor.Flux.SubscribeOn.1 - onSubscribe(FluxSubscribeOn.SubscribeOnSubscriber)
+[main] INFO reactor.Flux.SubscribeOn.1 - request(32)
+[main] INFO reactor.Flux.SubscribeOn.2 - onSubscribe(FluxSubscribeOn.SubscribeOnSubscriber)
+[main] INFO reactor.Flux.SubscribeOn.2 - request(32)
+[parallel-1] INFO reactor.Flux.SubscribeOn.1 - onNext(APPLE)
+[parallel-2] INFO reactor.Flux.SubscribeOn.2 - onNext(KIWI)
+[parallel-1] INFO reactor.Flux.SubscribeOn.1 - onNext(ORANGE)
+[parallel-2] INFO reactor.Flux.SubscribeOn.2 - onNext(STRAWBERRY)
+[parallel-1] INFO reactor.Flux.SubscribeOn.1 - onNext(BANANA)
+[parallel-1] INFO reactor.Flux.SubscribeOn.1 - onComplete()
+[parallel-2] INFO reactor.Flux.SubscribeOn.2 - onComplete()
+```
+
+日志条目清楚地显示，第一个缓冲区（apple、orange 和 banana）中的水果在 parallel-1 线程中处理。同时，在第二个缓冲区（kiwi 和 strawberry）中的水果在 parallel-2 线程中进行处理。从每个缓冲区的日志条目交织在一起这一事实可以明显看出，这两个缓冲区是并行处理的。
+
+如果出于某种原因，需要将 Flux 发出的所有内容收集到 List 中，则可以调用不带参数的 buffer()：
+
+```java
+Flux<List<List>> bufferedFlux = fruitFlux.buffer();
+```
+
+这将产生一个新的 Flux，该 Flux 会发出一个包含源 Flux 发布的所有项的 List。使用 collectList() 操作也可以实现同样的功能，如图中的弹珠图所示：
+
+![图 10.19 collect-list 操作产生一个 Mono，其中包含由传入 Flux 发出的所有消息的列表](SpringFramework.assets/10.19.png)
+
+collectList() 生成一个发布 List 的 Mono，而不是生成一个发布 List 的 Flux。以下测试方法说明了如何使用它：
+
+```java
+@Test
+public void collectList() {
+    Flux<String> fruitFlux = Flux.just(
+        "apple", "orange", "banana", "kiwi", "strawberry");
+    Mono<List<String>> fruitListMono = fruitFlux.collectList();
+
+    StepVerifier
+        .create(fruitListMono)
+        .expectNext(Arrays.asList(
+            "apple", "orange", "banana", "kiwi", "strawberry"))
+        .verifyComplete();
+}
+```
+
+一种更有趣的收集 Flux 发送的项目的方法是把它们存到 Map 中。如图所示，collectMap() 操作产生一个 Mono，它发布一个 Map，其中填充了由给定 Function 计算其键值的条目。
+
+![图 10.20 collect-map 操作产生一个 Mono，其中包含由传入 Flux 发出的消息的 Map，其中的键来自传入消息的某些特性](SpringFramework.assets/10.20 (2) (2) (2) (2) (2) (2) (1).png)
+
+要查看 collectMap() 的实际操作，请查看以下测试方法：
+
+```java
+@Test
+public void collectMap() {
+    Flux<String> animalFlux = Flux.just(
+        "aardvark", "elephant", "koala", "eagle", "kangaroo");
+    Mono<Map<Character, String>> animalMapMono =
+        animalFlux.collectMap(a -> a.charAt(0));
+
+    StepVerifier
+        .create(animalMapMono)
+        .expectNextMatches(map -> {
+            return
+                map.size() == 3 &&
+                map.get('a').equals("aardvark") &&
+                map.get('e').equals("eagle") &&
+                map.get('k').equals("kangaroo");
+        })
+        .verifyComplete();
+}
+```
+
+源 Flux 发出了一些动物的名字。在该 Flux 中，可以使用 collectMap() 创建一个新的 Mono，该 Mono 发送一个 Map，其中的键值由动物名称的第一个字母确定，并且该值是动物名称本身。如果两个动物名以同一个字母开头（如 *elephant* 和 *eagle* 或 *koala* 和 *kangaroo*），则流经流的最后一个条目将覆盖所有先前的条目。
+
+#### 对反应类型执行逻辑操作
+
+有时你只需要知道 Mono 或 Flux 发布的条目是否符合某些条件。all() 和 any() 操作将执行这样的逻辑。下图说明了 all() 和 any() 是如何工作的：
+
+![图 10.21 可以对 Flux 进行测试以确保所有消息在所有操作中都满足某些条件](SpringFramework.assets/10.21.png)
+
+![图 10.22 可以对 Flux 进行测试以确保在任何操作中至少有一条消息满足某些条件](SpringFramework.assets/10.22.png)
+
+假设你想知道由 Flux 发布的每个 String 都包含字母 *a* 或字母 *k*。下面的测试演示如何使用 all() 检查该条件：
+
+```java
+@Test
+public void all() {
+    Flux<String> animalFlux = Flux.just(
+        "aardvark", "elephant", "koala", "eagle", "kangaroo");
+
+    Mono<Boolean> hasAMono = animalFlux.all(a -> a.contains("a"));
+    StepVerifier.create(hasAMono)
+        .expectNext(true)
+        .verifyComplete();
+
+    Mono<Boolean> hasKMono = animalFlux.all(a -> a.contains("k"));
+    StepVerifier.create(hasKMono)
+        .expectNext(false)
+        .verifyComplete();
+}
+```
+
+在第一个 StepVerifier 中，检查字母 *a*。all 操作应用于源 Flux，从而生成 Boolean 类型的 Mono。在本例中，所有的动物名都包含字母 *a*，因此从产生的 Mono 发出 true。但是在第二个 StepVerifier 中，得到的 Mono 将发出 false，因为并非所有的动物名都包含 k。
+
+与其执行全部满足或完全不满足的检查，不如满足至少有一个条目匹配。在这种情况下，any() 操作就是你所需要的。这个新的测试用例使用 any() 检查字母 *t* 和 *z*：
+
+```java
+@Test
+public void any() {
+    Flux<String> animalFlux = Flux.just(
+        "aardvark", "elephant", "koala", "eagle", "kangaroo");
+
+    Mono<Boolean> hasAMono = animalFlux.any(a -> a.contains("t"));
+    StepVerifier.create(hasAMono)
+        .expectNext(true)
+        .verifyComplete();
+
+    Mono<Boolean> hasZMono = animalFlux.any(a -> a.contains("z"));
+    StepVerifier.create(hasZMono)
+        .expectNext(false)
+        .verifyComplete();
+}
+```
+
+在第一个 StepVerifier 中，你会看到生成的 Mono 发出 true，因为至少有一个动物名有字母 *t*（特别是 *elephant*）。在第二个 StepVerifier 中，生成的 Mono 发出 false，因为没有一个动物名包含 *z*。
+
+#### 总结
+
+- 响应式编程包括创建数据流通过的管道。
+- Reactor Stream 规范定义了四种类型：Publisher、Subscriber、Subscription 和 Transformer（Publisher 和 Subscriber 的组合）。
+- Project Reactor 实现了 Reactive Steam，并将流定义抽象为两种主要类型，Flux 和 Mono，每种类型都提供数百个操作。
+- Spring 5 利用 Reactor 创建响应式控制器、存储库、REST 客户端和其他响应式框架支持。
+
+## Spring WebFlux
+
+典型的基于 Servlet 的 web 框架，比如 Spring MVC，本质上是阻塞和多线程的，每个连接使用一个线程。在处理请求时，将从线程池中提取一个工作线程来处理该请求。同时，请求线程被阻塞，直到工作线程通知它已完成为止。
+
+因此，在请求量很大的情况下，阻塞 web 框架不能有效地扩展。慢工作线程中的延迟使情况更糟，因为工作线程池准备处理另一个请求所需的时间更长。在某些用例中，这种工作方式是完全可以接受的。事实上，这在很大程度上是大多数 web 应用程序十多年来的开发方式，但时代在变。
+
+这些 web 应用程序伴随着 HTTP API，已经从人们偶尔浏览网站成长为人们经常消费内容和使用应用程序。现在，所谓的 *物联网*（其中甚至没有人参与）产生的汽车、喷气发动机以及其他非传统的客户不断地通过 web API 交换数据。随着越来越多的客户使用 web 应用程序，扩展性比以往任何时候都更加重要。
+
+相比之下，异步 web 框架实现用较少的线程达到更高的可扩展性，通常一个 CPU 一个线程。通过应用被称为 *event looping* 的技术（如图所示），这些框架的每个线程都能够处理许多请求，使得每个连接的成本低 。
+
+![图 11.1 异步 web 框架通过应用 event looping，使用较少的线程处理更多的请求](SpringFramework.assets/11.1.png)
+
+在一个 event loop 中，一切皆为事件，其中包括像是数据库和网络操作这种密集操作的请求与回调。当需要完成一个重要的操作时，event loop 并行地为那个操作注册一个回调，然后它继续去处理其他事件。
+
+当操作完成后，它会被 event loop 视为一个 event，对于请求也是一样的操作。这样异步 web 框架就能够使用更少的线程应对繁重的请求，从而实现更好的扩展性，这样做的结果就是降低了线程管理的开销。
+
+Spring 5 已经基于 Project Reactor 推出了一个非阻塞异步 web 框架，以解决在 web 应用程序和 API 更大的可扩展性。让我们来看看 Spring WebFlux（一个响应式 web 框架）。
+
+### 介绍
+
+当 Spring 团队正在考虑如何添加一个响应式编程模型的网络层，很快就发现，如果不在 Spring MVC 做很大的改动，很明显这样做是很困难的。这将涉及到分支代码来决定是否响应式地处理请求。在本质上，其结果将是把两个 web 框架打包成一个，用 if 语句来分离响应式与非响应式。
+
+最终决定创建一个单独的响应式 web 框架，这个框架尽可能的借鉴 Spring MVC，而不是强行把响应式编程模型塞进 Spring MVC 中。Spring WebFlux 就是这个框架了。图 11.2 展示了由 Spring 5 所定义的完整的 web 开发技术栈。
+
+![图 11.2 Spring 5 通过名为 WebFlux 的新 web 框架支持响应式式 web 应用程序，WebFlux 是 Spring MVC 的兄弟，它们共享许多核心组件](SpringFramework.assets/11.2.png)
+
+在图的左侧，可以看到 SpringMVC 技术栈，它是在 Spring 框架的 2.5 版中引入的。SpringMVC位于 Java Servlet API 之上，它需要一个 Servlet 容器（比如 Tomcat）来执行。
+
+相比之下，Spring WebFlux（在右侧）与 Servlet API 没有关系，因此它构建在一个响应式 HTTP API 之上，这个方式与使用 Servlet API 提供的相同的响应式功能类似。而且由于 Spring WebFlux 没有耦合到 Servlet API，因此它不需要运行一个 Servlet 容器。相反，它可以在任何非阻塞 web 容器上运行，包括 Netty、Undertow、Tomcat、Jetty 或任何 Servlet3.1 或更高版本的容器。
+
+图中最值得注意的是左上角的框，它表示了 Spring MVC 和 Spring WebFlux 之间常见的组件，主要是用于定义 controller 的注解。由于 Spring MVC 和 Spring WebFlux 共享相同的注解，Spring WebFlux 在许多方面与 Spring MVC 没有区别。
+
+右上角的框表示另一种编程模型，该模型使用函数式编程范式而不是使用注解来定义 controller。
+
+Spring MVC 和 Spring WebFlux 之间最显著的区别就是添加到构建中的依赖项不同。在使用 Spring WebFlux 时，需要添加 Spring Boot WebFlux starter 依赖项，而不是标准的 web starter（例如，spring-boot-starter-web）。在项目的 pom.xml 文件中，如下所示：
+
+``` xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-webflux</artifactId>
+</dependency>
+```
+
+> 注意：与大多数 Spring Boot 的 starter 依赖项一样，这个 starter 也可以通过选中 initializer 中的 Reactive Web 复选框添加到项目中。
+
+使用 WebFlux 而不是 Spring MVC 的一个有趣的副作用是，WebFlux 的默认嵌入式服务器是 Netty 而不是 Tomcat。Netty 是少数几个异步的事件驱动的服务器之一，它自然适合像 Spring WebFlux 这样的响应式 web 框架。
+
+除了使用不同的 starter 依赖项之外，Spring WebFlux controller 方法通常接受并返回响应式类型，比如 Mono 和 Flux，而不是域类型和集合。Spring WebFlux 控制器还可以处理 RxJava 类型，比如 Observable、Single 和 Completable。
+
+**响应式 Spring MVC？**
+
+尽管 Spring WebFlux controller 通常返回 Mono 和 Flux，但这并不意味着 Spring MVC 在处理响应式类型时没有办法。如果你愿意，Spring MVC controller 方法也可以返回 Mono 或 Flux。
+
+不同之处在于如何使用这些类型。Spring WebFlux 是一个真正的响应式 web 框架，允许在 event loop 中处理请求，而 Spring MVC 是基于 Servlet 的，依赖多线程处理多个请求。
+
+![image-20230310211614575](SpringFramework.assets/image-20230310211614575.png)
+
+Spring 框架中包含的原始 Web 框架 Spring Web MVC 是专门为 Servlet API 和 Servlet 容器构建的。响应式 Web 框架 Spring WebFlux 是后来在5.0版本中添加的。它是完全非阻塞的，支持反应流背压，并运行在 Netty，Undertwow 和 Servlet 3.1 + 容器等服务器上。
+
+这两个 Web 框架都反映了它们源模块的名称(Spring-webmvc 和 Spring-webflow) ，并且在 Spring 框架中并存。每个模块都是可选的。应用程序可以使用其中一个模块，或者在某些情况下使用两个模块ーー例如，带有反应式 WebClient 的 Spring MVC 控制器。
+
+### 异步非阻塞
+
+WebFlux是一种异步非阻塞的框架
+
+异步和同步：针对调用者，调用者发送请求，如果等着对方回应之后才去做其他事情就是同步，如果发送请求之后不等着对方回应就去做其他事情就是异步。
+
+阻塞和非阻塞：针对被调用者，被调用者收到请求之后，做完请求任务之后才给出反馈就是阻塞，收到请求之后马上给出反馈然后再去做其他事情就是非阻塞。
+
+### webflux特点：
+
+- 反应式编程和非阻塞：反应和非阻塞通常不会使应用程序运行得更快。但在某些情况下，它们可以，例如，如果使用 WebClient 并行运行远程调用。总的来说，以非阻塞方式做事情需要更多的工作，这可能会略微增加所需的处理时间。
+
+  反应式和非阻塞性的主要预期好处是能够使用少量、固定数量的线程和更少的内存进行伸缩。这使得应用程序在负载下更具弹性，因为它们以更可预测的方式扩展。然而，为了观察这些好处，您需要一些延迟(包括慢速和不可预测的网络 I/O 的混合)。这就是反应堆开始显示其优势的地方，而且差异可能是巨大的。
+
+- 函数式编程：webflux中可以使用java8函数式编程方式实现路由请求
+
+### Spring MVC or WebFlux?
+
+![image-20230310212535422](SpringFramework.assets/image-20230310212535422.png)
+
+- 两个框架都可以使用注解方式，都运行在Tomcat等容器中
+- SpringMVC采用命令式编程，WebFlux采用异步响应式编程
+
+举例：
+
+SpringCloud Gateway是基于Spring WebFlux的，因为网关要处理大量请求，需要异步非阻塞的框架。
+
+### 执行流程和核心API
+
+SpringWebFlux基于Reactor，默认使用容器是Netty，Netty是高性能的NIO框架，是异步非阻塞的。
+
+BIO：
+
+![image-20230312164359852](SpringFramework.assets/image-20230312164359852.png)
+
+NIO：
+
+![image-20230312164507654](SpringFramework.assets/image-20230312164507654.png)
+
+#### 此章节依托答辩，建议自己看源码
+
+SpringWebFlux执行过程和SpringMVC相似
+
+SpringWebFlux核心控制器DispatchHandler，实现接口WebHandler
+
+![image-20230312165622083](SpringFramework.assets/image-20230312165622083.png)
+
+这个方法在DispatcherHandler中的实现如下
+
+```java
+public Mono<Void> handle(ServerWebExchange exchange) {//放http请求响应消息
+    return this.handlerMappings == null ? this.createNotFoundError() : Flux.fromIterable(this.handlerMappings).concatMap((mapping) -> {
+        return mapping.getHandler(exchange);//根据请求地址获取对应mapping
+    }).next().switchIfEmpty(this.createNotFoundError()).flatMap((handler) -> {
+        return this.invokeHandler(exchange, handler);//调用具体的业务方法
+    }).flatMap((result) -> {
+        return this.handleResult(exchange, result);//处理结果返回
+    });
+}
+```
+
+DispatherHandler：负责请求的处理
+
+![image-20230312170044363](SpringFramework.assets/image-20230312170044363.png)
+
+- HandlerMapping：根据客户端请求，查询处理请求的方法
+- HandlerAdaper：负责请求处理
+- HandlerResultHandler：响应结果处理
+
+实现函数式编程：
+
+RounterFunction：路由处理
+
+HandlerFunction：处理函数
+
+## 注解编程
 
 
-## 执行流程和核心API
 
+## 函数式编程
 
-
-## 注解编程模型
-
-
-
-## 函数时编程模型
+- 在使用函数式编程时需要自己初始化服务器
+- 两个核心接口，核心任务定义两个函数式接口的实现并启动需要的服务器
+  - RouterFunction：实现路由功能，请求转发给对应的handler
+  - HandlerFunction：处理请求生成的函数
+- SpringWebflux请求和响应不再是ServletRequest和ServletResponse，而是ServerRequest和ServerRseponse
