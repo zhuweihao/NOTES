@@ -165,7 +165,7 @@ ssh-keygen -t rsa -C 'zhuweihao@sugon.com' -f ~/.ssh/id_rsa_sugon
 ssh-keygen -t rsa -C '2548237631@qq.com' -f ~/.ssh/id_rsa_github
 ```
 
-
+config文件
 
 ```
 # gitee
