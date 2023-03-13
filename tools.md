@@ -154,6 +154,41 @@ IDEA集成Git
 
 
 
+
+
+## 配置多个托管平台ssh
+
+```bash
+// id_rsa_company是创建的ssh文件名，你可以自己定义
+ssh-keygen -t rsa -C 'zhuweihao@sugon.com' -f ~/.ssh/id_rsa_sugon
+
+ssh-keygen -t rsa -C '2548237631@qq.com' -f ~/.ssh/id_rsa_github
+```
+
+
+
+```
+# gitee
+Host gitee.com # 代表gitee的git代码仓库地址
+HostName gitee.com
+PreferredAuthentications publickey
+IdentityFile ~/.ssh/id_rsa_gitee
+
+# github
+Host github.com # 代表github的git代码仓库地址
+HostName github.com
+PreferredAuthentications publickey
+IdentityFile ~/.ssh/id_rsa_github
+
+# gitlab
+Host 172.22.5.3 # 代表公司gitlab的git代码仓库地址
+HostName 172.22.5.3
+PreferredAuthentications publickey
+IdentityFile ~/.ssh/id_rsa_sugon
+```
+
+
+
 # Maven
 
 目前无论使用IDEA还是Eclipse等其他IDE，使用里面的ANT工具，它可以帮助我们进行编译，打包运行等工作。
