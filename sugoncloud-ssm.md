@@ -481,3 +481,44 @@ public ResultModle rollback(@PathVariable("mesh_id") String meshId,
 2、然后是如果分配新任务的话完成新功能的开发
 
 3、学习kubernetes和istio的知识。
+
+
+
+
+
+# 流量管理
+
+
+
+- ```java
+  @JsonIgnore
+  private Map<String, Object> additionalProperties = new HashMap();
+  ```
+
+  有些字段没有
+
+- VirtualService
+
+  - TLSRouteDTO
+    - name
+  - TCPRouteDTO
+    - name
+  - HTTPRouteDTO
+    - directResponse
+  -  AbortDTO
+    - grpcStatus
+  - HTTPRedirectDTO
+    - port
+    - derivePort
+    - scheme
+
+- DestinationRule
+
+  - LoadBalancerSettingsDTO
+
+    - warmupDurationSecs预热时间
+
+    - SimpleLBEnum：istio版本导致的简单负载均衡模式不一致
+
+
+
